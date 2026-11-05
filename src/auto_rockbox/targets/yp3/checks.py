@@ -1,7 +1,8 @@
 """Guided hands-on checks with a person at the player (`arb yp3 checks`): the
-headphone jack, the keys, the built-in mic, FM, the speaker and power-off on
-battery. Each step says what to do, shows the player's readings live from
-its dev shell, and asks what the person saw or heard.
+keys, the built-in mic, FM, the speaker and power-off on battery. (The
+headphone jack has no detect signal: it cuts the speaker in hardware.)
+Each step says what to do, shows the player's readings live from its dev
+shell, and asks what the person saw or heard.
 
 The checks need the dev build running with its USB serial shell (usb=1). If
 none is, the command boots one from ROM USB (with the configured modules)
@@ -24,11 +25,10 @@ from ...registry import Context, arg, command
 from ...shell import NoShell, Reply
 from . import Yp3, Yp3Run
 
-STEPS = ("jack", "keys", "mic", "fm", "speaker", "poweroff")
+STEPS = ("keys", "mic", "fm", "speaker", "poweroff")
 KEYS = {0x01: "UP", 0x02: "DOWN", 0x04: "LEFT", 0x08: "RIGHT", 0x10: "CENTRE"}   # button-target.h
 TONE = "/yp3dev/tone.mp3"
 MIC_REC = "mic"                 # the mic step's recording: /yp3dev/mic.wav
-KEY_PROBE = "GPIO3.12"          # pinscan reports the key probe toggling: not the jack
 
 _BUTTONS = re.compile(r"buttons ([0-9a-f]+)")
 
@@ -80,19 +80,9 @@ class Checks:
 
     def run(self, steps: Iterable[str]) -> dict[str, bool]:
         """Each step's outcome, in turn"""
-        by_name = {"jack": self.jack, "keys": self.keys, "mic": self.mic, "fm": self.fm,
+        by_name = {"keys": self.keys, "mic": self.mic, "fm": self.fm,
                    "speaker": self.speaker, "poweroff": self.poweroff}
         return {s: by_name[s]() for s in steps}
-
-    def jack(self) -> bool:
-        self.prompt("Headphone jack: press Enter, then plug headphones in and out of the "
-                    "player 3 times over ~20 s (pause ~2 s each way). Pin changes print live.")
-
-        def show(line: str) -> None:
-            if line and line != "ok" and KEY_PROBE not in line:
-                self.echo(f"    {line}")
-        self.sh("pinscan 25", 45.0, show)
-        return self.yes("Did one GPIO line (or the adc) change in step with plugging (in/out)?")
 
     def keys(self) -> bool:
         self.prompt("Keys: press Enter here, then on the player press UP, DOWN, LEFT, RIGHT "

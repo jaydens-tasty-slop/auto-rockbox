@@ -23,12 +23,9 @@ from auto_rockbox.targets.yp3.rom import DeviceError, UsbId
 from auto_rockbox.workspace import Workspace
 
 REPLIES = {
-    "pinscan 25": ["pinscan: start 0 0 0 0 adc 900", "GPIO3.12 -> 1", "GPIO1.5 -> 0",
-                   "GPIO1.5 -> 1"],
-    "keylog 20": ["keylog: buttons now 0, centre releases recovered by poll 0, short taps 0;"
-                  " press keys now", "buttons 1 (adc 10)", "buttons 0 (adc 900)",
-                  "buttons 2 (adc 300)", "buttons c (adc 500)", "buttons 0 (adc 900)",
-                  "buttons 10 (adc 900)"],
+    "keylog 20": ["keylog: buttons now 0; press keys now", "buttons 1 (adc 10)",
+                  "buttons 0 (adc 900)", "buttons 2 (adc 300)", "buttons c (adc 500)",
+                  "buttons 0 (adc 900)", "buttons 10 (adc 900)"],
     "rec 6 mic mic": ["rec /yp3dev/mic.wav: status 1", "rec: 6000 ms recorded"],
     "fm 97100": ["fm present=1 tuned=1 stereo=1 rssi=40"],
     "rec 5": ["rec /yp3dev/rec.wav: status 1", "rec: 5000 ms recorded"],
@@ -81,28 +78,26 @@ class Bench:
 
 def test_all_steps() -> None:
     player = Player(REPLIES)
-    bench = Bench(["", "y",                 # jack: Enter, a pin changed
-                   "",                      # keys: Enter
+    bench = Bench(["",                      # keys: Enter
                    "", "", "n",             # mic: Enter, headphones in, heard nothing
                    "", "yes",               # fm: Enter, a station
                    "", "Y",                 # speaker
                    "", "y", ""])            # poweroff: off, on again
     results = bench.checks(player).run(STEPS)
-    assert results == {"jack": True, "keys": True, "mic": False, "fm": True, "speaker": True,
+    assert results == {"keys": True, "mic": False, "fm": True, "speaker": True,
                        "poweroff": True}, results
     assert bench.answers == []
-    assert player.sent == ["pinscan 25", "keylog 20", "rec 6 mic mic", "vol -20",
+    assert player.sent == ["keylog 20", "rec 6 mic mic", "vol -20",
                            "play /yp3dev/mic.wav", "stop", "vol -20", "fm 97100", "rec 5",
                            "fm off", "amp 1", "vol -20", "play /yp3dev/tone.mp3", "amp 0",
                            "stop", "uptime", "date"], player.sent
     out = bench.out
-    assert "    GPIO1.5 -> 0" in out and not any("GPIO3.12" in x for x in out)    # the key probe
     assert "    pressed: LEFT+RIGHT" in out and "    pressed: (released)" in out
     assert "    seen: CENTRE, DOWN, LEFT, RIGHT, UP | missing: none" in out
     assert "    rec: 6000 ms recorded" in out
     assert "    fm present=1 tuned=1 stereo=1 rssi=40" in out
     assert "    player: 2026-11-05 10:00:00 wday 4  host: HOST" in out
-    assert bench.asked[1].endswith("[y/n] ") and bench.asked[0].startswith("\n>>> Headphone")
+    assert bench.asked[0].startswith("\n>>> Keys") and bench.asked[3].endswith("[y/n] ")
 
 
 def test_keys_missing() -> None:
