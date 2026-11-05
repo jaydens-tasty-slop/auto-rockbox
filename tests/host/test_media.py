@@ -95,6 +95,36 @@ class TestAnalysis(unittest.TestCase):
             assert e == media.Entry("t.wav", "stereo", 6.0, 4.0), e
 
 
+    @unittest.skipUnless(shutil.which("ffmpeg"), "no ffmpeg")
+    def test_smaf_audio_track(self) -> None:
+        """ffmpeg's SMAF file, rewritten, takes Rockbox's audio-track path (a
+        Contents Info chunk over 5 bytes) and its chunk search finds the
+        audio track and its wave data; ffmpeg still decodes it the same"""
+        args = dict(media.CODECS)["smaf.mmf"]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            src = write_wav(root / "t.wav", tone(1000, 1500, 2))
+            mmf = root / "t.mmf"
+            subprocess.run(["ffmpeg", "-v", "error", "-i", str(src), *args, str(mmf)], check=True)
+            before = media.decode(mmf)
+            media.smaf_audio_track(mmf, "smaf.mmf")
+            raw = mmf.read_bytes()
+            cnti = int.from_bytes(raw[12:16], "big")
+            assert cnti > 5 and raw[16 + cnti - 12:16 + cnti] == b"ST:smaf.mmf,"
+            assert int.from_bytes(raw[4:8], "big") == len(raw) - 8
+            pos, found = 16 + cnti, {}
+            while pos + 8 <= len(raw):      # search_chunk(), metadata/smaf.c
+                name, size = raw[pos:pos + 4], int.from_bytes(raw[pos + 4:pos + 8], "big")
+                found[name[:3]] = (pos + 8, size)
+                pos += 8 + size
+                if name[:3] == b"ATR":
+                    pos = found[b"ATR"][0] + 6          # its format bytes, then its chunks
+            assert b"ATR" in found and b"Awa" in found, found
+            assert np.array_equal(media.decode(mmf), before)
+            with self.assertRaises(media.MediaError):
+                media.smaf_audio_track(src, "x")
+
+
 PORT = Path(__file__).resolve().parents[3]          # rockbox-yp3, if auto-rockbox sits in it
 # The extensions Rockbox picks the stress set's codecs by
 PLAYABLE = {".mp3", ".mp2", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".aiff", ".au", ".wv",

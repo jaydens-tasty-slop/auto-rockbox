@@ -198,6 +198,24 @@ def step_down(a: np.ndarray, rate: int = RATE) -> float | None:
     return round(float(held[0]) * n / rate, 2) if len(held) else None
 
 
+def smaf_audio_track(path: Path, title: str) -> None:
+    """Makes ffmpeg's SMAF file one Rockbox plays. Its parsers
+    (lib/rbcodec/metadata/smaf.c, codecs/smaf.c) take a Contents Info chunk
+    of 5 bytes to mean a score track, and they then want a Data Chunk in
+    OPDA and an MTR. ffmpeg writes those 5 bytes before an audio track
+    (ATR), so playback skipped the file. A title tag (ST:...,) in CNTI
+    makes the chunk longer, and the parsers take the audio-track path."""
+    raw = bytearray(path.read_bytes())
+    if raw[:4] != b"MMMD" or raw[8:12] != b"CNTI":
+        raise MediaError(f"{path}: not a SMAF file")
+    size = int.from_bytes(raw[12:16], "big")
+    tag = f"ST:{title},".encode()
+    raw[16 + size:16 + size] = tag
+    raw[12:16] = (size + len(tag)).to_bytes(4, "big")
+    raw[4:8] = (int.from_bytes(raw[4:8], "big") + len(tag)).to_bytes(4, "big")
+    path.write_bytes(raw)
+
+
 # Dialogic (OKI) ADPCM: 12-bit samples, 4-bit codes, high nibble first
 OKI_STEPS = [16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80,
              88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337,
@@ -256,6 +274,8 @@ def make(out: Path, tone: Path, *, extra: Path | None = None, mod: Path | None =
         def run(p: Path) -> Entry:
             _encode(["-i", str(tone)], [*clip, "-map_metadata", "-1",
                                         "-metadata", f"title={name}", *args], p)
+            if p.suffix == ".mmf":
+                smaf_audio_track(p, name)
             return describe(out, p)
         return run
 
