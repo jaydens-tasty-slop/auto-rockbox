@@ -17,7 +17,9 @@ conclusions.**
   the way a Linux driver is written from a datasheet. Test tooling may use
   whatever works, including calling ROM routines at run time; shipped code
   may not contain anything derived from stock. Keep reverse engineering in a
-  separate session or notebook that only exports facts into `docs/`.
+  separate session or notebook that only exports facts into `docs/`; with
+  agents, isolate the sessions' tools and gate what crosses
+  ([clean-room.md](clean-room.md)).
 - **Back up first, and prove the restore.** Before writing a byte of flash:
   dump all of it twice, compare the two dumps, and restore a non-critical
   sector from the dump to prove the path works. Keep the dumps out of any

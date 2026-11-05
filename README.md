@@ -46,6 +46,8 @@ The `skills/` directory has the method behind the tools, in plain markdown:
   shippable Rockbox.
 - [adding-a-target.md](skills/adding-a-target.md): what a dev build must
   do, and the `Target` class.
+- [clean-room.md](skills/clean-room.md): reverse engineering with agents
+  while drivers stay clean.
 - [dev-loop.md](skills/dev-loop.md): everyday `arb`.
 - [testing.md](skills/testing.md): soak and torture runs.
 - [audio-quality.md](skills/audio-quality.md),

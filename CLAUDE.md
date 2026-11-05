@@ -9,6 +9,8 @@ handling. One `Target` subclass per player; everything else is shared.
 
 - [skills/bring-up.md](skills/bring-up.md): bringing Rockbox up on a new
   player, from no documentation to a product. Start here.
+- [skills/clean-room.md](skills/clean-room.md): reverse engineering stock
+  firmware with agents, and keeping drivers clean.
 - [skills/adding-a-target.md](skills/adding-a-target.md): the dev-build
   contract on the device and the `Target` class on the host.
 - [skills/dev-loop.md](skills/dev-loop.md): day-to-day use of `arb`.
