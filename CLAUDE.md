@@ -16,6 +16,8 @@ handling. One `Target` subclass per player; everything else is shared.
   checks, reading failures.
 - [skills/audio-quality.md](skills/audio-quality.md): measuring the output
   against a reference device, calibrating levels, fitting an EQ.
+- [skills/fm-radio.md](skills/fm-radio.md): tuner, reference clock,
+  capture path, RDS, and the traps they hide.
 - [skills/bluetooth-range.md](skills/bluetooth-range.md): walks with the
   headset and with the player, against stock.
 - [skills/battery.md](skills/battery.md): battery runs and discharge tables.

@@ -128,6 +128,12 @@ Each Rockbox run must show all of these:
       stock's. After a drop the player must reconnect and resume within 30 s
       with nobody touching it, five times in a row.
 
+- [ ] FM (if shipped; [fm-radio.md](fm-radio.md)): stations at their
+      labelled frequencies (RDS PI checked), an FM_TRUE scan that finds the
+      real stations only, no overload wraps on the strongest station
+      (`arb fm-check`), stereo, an hour of monitor with no overruns, and
+      recording from FM.
+
 ### Interface
 
 - [ ] Every shipped plugin starts and exits cleanly (the torture plugin

@@ -118,7 +118,7 @@ Driver order, each to "works, measured, documented" before the next:
 | 6 | USB | mass storage with hashes checked, then the serial dev shell |
 | 7 | RAM layout | core, codecs and plugins fit; a RAM ledger in `docs/` |
 | 8 | RTC, alarm | survives power-off; an alarm wakes the player |
-| 9 | Recording, FM, mic | as the hardware has them |
+| 9 | Recording, FM, mic | as the hardware has them; FM: [fm-radio.md](fm-radio.md) |
 | 10 | Bluetooth | last: it is the largest by far |
 
 For each driver: collect the facts (registers, init tables, timings) into
@@ -145,6 +145,13 @@ Then the torture suite until it runs clean for days, the battery runs
   elapsed time, not by work count.
 - **Small RAM means a ledger.** Write down every static buffer and stack with
   its size, and decide RAM against features against flash in that order.
+- **Measure every clock you derive anything from.** Labels lie: the YP3's
+  "32 kHz" tuner reference was 32.000 kHz, not 32.768, so every FM station
+  came out 2.34% low, and that showed up as distorted bass and a broken
+  station scan, not as a wrong frequency. Its RTC counts a 53.7 kHz
+  oscillator, and the TS17's `udelay` overflowed. Check rates against a
+  known clock (a timer, the host, an RDS station) before tuning anything
+  that depends on them.
 - **Don't trust a checker over the signal.** When a test fails, look at the
   raw samples or frames before blaming the firmware. Capture stamps can
   collide (two seconds published in one wall second), a test file can be
