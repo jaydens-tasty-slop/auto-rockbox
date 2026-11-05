@@ -110,8 +110,14 @@ Each Rockbox run must show all of these:
       (`arb media`; the manifest says which clips are tones): tone frequency
       and channel checked on Line In.
 - [ ] One hour of continuous wired playback with no dropouts on Line In.
-- [ ] The level at each volume step matches the table, and there is no
-      clipping at maximum on the reference tone.
+- [ ] **Measured against a known-good reference device and against stock**,
+      on battery with the same load ([audio-quality.md](audio-quality.md)):
+      response within ±0.5 dB of the reference from 50 Hz to 15 kHz (or an
+      EQ preset fitted and shipped), THD+N no worse than stock's at each
+      output level, noise at the capture's floor, crosstalk no worse than
+      stock's, and no slips in 120 s of steady tone.
+- [ ] The level at each volume step matches the calibrated table, and
+      maximum volume does not clip 0 dBFS material.
 - [ ] Headphone detect, if the hardware has it.
 - [ ] Bluetooth (if shipped): pair from scratch, reconnect after a power
       cycle of either side, two different sink models, a range drop and
