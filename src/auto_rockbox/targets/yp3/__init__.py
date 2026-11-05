@@ -84,6 +84,10 @@ class Yp3(Target):
                        the device and dev-shell lock files in the temp dir
                        (default: auto-rockbox-yp3[-shell].lock); "yp3dev.lock" and
                        "yp3dev-sh.lock" make arb and yp3dev exclude each other
+        menu_coverage = "<paths.build>/menu-coverage.json"
+                       the torture crawl's graph of the UI, kept across runs
+    Torture's bt-* scenarios read [bluetooth] player and sink, its ledger
+    [torture] ledger (targets/yp3/torture.py, suites/torture.py).
     """
 
     name = "yp3"
@@ -251,8 +255,10 @@ class Yp3(Target):
         return guard(self.rom(), self.conf.integer("charge_limit_mv", CHARGE_LIMIT_MV),
                      self.battery_log, stop)
 
-    def shell(self) -> Shell:
-        names = self.function_names()
+    def shell(self, elf: Path | None = None) -> Shell:
+        """ELF (default: the last launch's, else config `elf`) names the
+        addresses in `ticks:` lines"""
+        names = self.function_names(elf)
         return Shell(self.name, SHELL_VID, SHELL_PID,
                      annotate=lambda line: annotate_ticks(line, names),
                      lock_file=self.conf.string("shell_lock", "") or None)
@@ -282,4 +288,4 @@ def _describe(b: Battery) -> str:
             + (f"; {b.note}" if b.note else ""))
 
 
-from . import commands  # noqa: E402, F401  (registers the YP3's commands; they use Yp3)
+from . import commands, torture  # noqa: E402, F401  (they register, and use Yp3)
