@@ -120,8 +120,13 @@ Each Rockbox run must show all of these:
       maximum volume does not clip 0 dBFS material.
 - [ ] Headphone detect, if the hardware has it.
 - [ ] Bluetooth (if shipped): pair from scratch, reconnect after a power
-      cycle of either side, two different sink models, a range drop and
-      recovery, AVRCP keys.
+      cycle of either side, two different sink models, AVRCP keys.
+- [ ] Bluetooth range against stock on the same route and day
+      ([bluetooth-range.md](bluetooth-range.md)): a headset walk (the player
+      on the desk, the listener walking) and a player walk (the PC as sink,
+      the player in a pocket). The first stutter must be no nearer than
+      stock's. After a drop the player must reconnect and resume within 30 s
+      with nobody touching it, five times in a row.
 
 ### Interface
 

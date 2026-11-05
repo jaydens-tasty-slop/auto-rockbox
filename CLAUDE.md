@@ -16,6 +16,8 @@ handling. One `Target` subclass per player; everything else is shared.
   checks, reading failures.
 - [skills/audio-quality.md](skills/audio-quality.md): measuring the output
   against a reference device, calibrating levels, fitting an EQ.
+- [skills/bluetooth-range.md](skills/bluetooth-range.md): walks with the
+  headset and with the player, against stock.
 - [skills/battery.md](skills/battery.md): battery runs and discharge tables.
 - [skills/release.md](skills/release.md): what a release must pass.
 
