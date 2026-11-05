@@ -50,6 +50,15 @@ def test_dropout_on_one_channel() -> None:
     assert r.edges == [(0, 2)]
 
 
+def test_stream_starts_before_the_audio() -> None:
+    left, right = _tone(3), _tone(3)
+    left[:46 * 44], right[:46 * 44] = 0, 0  # the stack's silence before its mixer has PCM
+    left[-10 * 44:] = 0                     # 10 ms at the end: a gap
+    with tempfile.TemporaryDirectory() as tmp:
+        r = analyse_wav(_wav(Path(tmp) / "a.wav", left, right), lambda _s: None)
+    assert r.edges == [(0, 46)] and len(r.gaps) == 1 and r.gaps[0][0] > 2.99, r
+
+
 def test_silence() -> None:
     quiet = np.zeros(2 * RATE)
     with tempfile.TemporaryDirectory() as tmp:

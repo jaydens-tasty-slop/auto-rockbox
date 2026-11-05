@@ -13,7 +13,10 @@ import numpy as np
 
 from .. import linein
 
-EDGE_WINDOWS = 5            # a low run this short at the very start or end is not a gap
+LEAD_WINDOWS = 100          # a low run this short at the very start is not a gap: the
+                            # stream can start before the player's audio (the stack sends
+                            # silence until its mixer has PCM: ~46 ms in the simulator)
+EDGE_WINDOWS = 5            # nor one this short at the very end
 
 
 @dataclass(frozen=True)
@@ -60,7 +63,8 @@ def analyse_wav(path: Path, out: Callable[[str], object] = print) -> WavAnalysis
     window = rate // 1000
     n = len(x) // window
     runs = _merged_runs([r for ch in range(nch) for r in linein.low_runs(x[:, ch], rate)], n)
-    edges = [r for r in runs if (r[0] == 0 or r[0] + r[1] == n) and r[1] <= EDGE_WINDOWS]
+    edges = [r for r in runs if (r[0] == 0 and r[1] <= LEAD_WINDOWS)
+             or (r[0] + r[1] == n and r[1] <= EDGE_WINDOWS)]
     ms = 1000 * window / rate
     gaps = [(start * ms / 1000, length * ms) for start, length in runs
             if (start, length) not in edges]

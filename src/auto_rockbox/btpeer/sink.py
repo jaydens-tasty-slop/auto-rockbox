@@ -790,7 +790,8 @@ def report(opts: SinkOptions, rec: Recorder, sink: Sink, tally: Tally) -> bool:
             for start, length in wav.gaps[:20]:
                 out(f"  GAP: {length:.0f} ms below half the median level at {start:.3f} s")
             if wav.edges:
-                out(f"  (ignored {len(wav.edges)} short low run(s) at the very start/end)")
+                out("  (ignored at the very start/end: "
+                    + ", ".join(f"{n} ms low at {s} ms" for s, n in wav.edges) + ")")
     problems = rec.problems
     reasons = judge(received=bool(rec.packets), problems=problems,
                     audio_seconds=rec.audio_seconds, timing=timing, wav=wav, decoded=decoded,
