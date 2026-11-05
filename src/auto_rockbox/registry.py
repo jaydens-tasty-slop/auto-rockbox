@@ -17,7 +17,7 @@ A player's command overrides a generic one of the same name for that player.
 offered to targets that have them all.
 
 Where registrations come from, in order: the built-in modules
-(auto_rockbox.commands, auto_rockbox.targets), the `auto_rockbox.plugins`
+(auto_rockbox.commands, auto_rockbox.suites, auto_rockbox.targets), the `auto_rockbox.plugins`
 entry points of installed packages, and the workspace's `[plugins] modules`
 (Python files in the port's checkout). Each is simply imported; its
 decorators do the registering.
@@ -143,6 +143,7 @@ def _import_file(path: Path) -> None:
 def load_plugins(ws: Workspace) -> None:
     """Import every source of commands and targets (see the module docstring)"""
     importlib.import_module("auto_rockbox.commands")
+    importlib.import_module("auto_rockbox.suites")
     importlib.import_module("auto_rockbox.targets")
     for ep in importlib.metadata.entry_points(group=PLUGIN_GROUP):
         ep.load()
