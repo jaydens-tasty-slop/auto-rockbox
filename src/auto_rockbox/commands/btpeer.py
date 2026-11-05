@@ -253,7 +253,8 @@ _HID_COMMON = [
         help="keys pressed once both channels are up: up down left right a b l1 r1 menu "
         "view home; a ds4 also x y l2 r2 and sup sdown sleft sright (its left stick)"),
     arg("--connect", action="store_true", help="the device pages the stack and opens its "
-        "channels, as a paired one does (pair without it first)"),
+        "channels, as a paired one does (pair without it first); the presses then reach the "
+        "menus (UP then A selects the last item: shut down)"),
     arg("--connect-delay", type=float, default=5.0, metavar="S"),
     arg("--step", type=float, default=1.0, metavar="S", help="between presses (default 1)"),
     arg("--hold", type=float, default=0.15, metavar="S", help="each press (default 0.15: "
@@ -339,7 +340,9 @@ command("bt-peer hid", target=False, help="virtual DualShock 4 or keyboard again
     *_HID_COMMON, _HCI, _STACK,
     arg("--device-address", default=HID_ADDRESS, help=f"the device's (default {HID_ADDRESS})"),
     arg("--sim", type=Path, metavar="DIR", help="start the simulator in this build directory "
-        "and check the buttons it logs (without it, start it yourself)"),
+        "(one with the stack's HID host and BUTTON_PAD_*: build it from master; its "
+        "simdisk/.rockbox/bluetooth.dat keeps pairings between runs) and check the buttons "
+        "it logs (without it, start it yourself)"),
     arg("--shots", action="store_true",
         help="with --sim: a screenshot after each release (OUT/shotNN.png)"),
     *_LOGGING,
