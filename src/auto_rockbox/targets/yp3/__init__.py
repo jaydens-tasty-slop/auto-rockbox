@@ -288,4 +288,4 @@ def _describe(b: Battery) -> str:
             + (f"; {b.note}" if b.note else ""))
 
 
-from . import commands, torture  # noqa: E402, F401  (they register, and use Yp3)
+from . import checks, commands, torture  # noqa: E402, F401  (they register, and use Yp3)

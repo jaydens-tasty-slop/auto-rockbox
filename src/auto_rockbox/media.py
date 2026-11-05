@@ -14,12 +14,22 @@ here), its duration and when its 12 dB step-down comes (null for none).
 Formats ffmpeg cannot write (APE, Musepack, Shorten, RealAudio, ATRAC3, WMA
 Pro, the game-music formats but MOD) are left out.
 
+The stress set is music instead: a STRESS_S clip of one source per codec,
+bitrate and rate case, tagged "<codec> <settings>" so Now Playing shows what
+plays, in OUT/stress/, and OUT/Playlists/Stress test.m3u8 to hammer through
+them by hand or in a torture run (copy OUT's contents to the card root).
+Cases past the codecs' documented limits on the player are left out on
+purpose; block sizes are set where ffmpeg would copy the source's (16-sample
+FLAC frames from a FLAC source decode far too slowly); HE-AAC and APE need
+encoders ffmpeg lacks.
+
     [media]
     tone = "build/audio/tone.wav"
     extra = "build/audio/codecs"            # copied clips (optional)
     mod = "path/to/module.mod"              # a tracker module (optional)
     videos = ["path/to/video.avi"]          # copied videos (optional)
     video_size = "160x128"                  # the test videos' picture
+    stress_source = "build/audio/codecs/flac_16_44.flac"   # music for the stress set
 """
 
 from __future__ import annotations
@@ -74,6 +84,63 @@ VIDEOS: list[tuple[str, list[str]]] = [
     ("mpeg1.mkv", ["-c:v", "mpeg1video", "-b:v", "400k", "-bf", "0", "-g", "25",
                    "-c:a", "mp2", "-b:a", "128k"]),
     ("mjpeg.avi", ["-c:v", "mjpeg", "-q:v", "5", "-c:a", "pcm_s16le"]),
+]
+
+STRESS_S = 30
+STRESS_PLAYLIST = "Playlists/Stress test.m3u8"
+OGG_PAGES = ["-page_duration", "100000"]     # oggenc-sized pages, not 1 s
+
+# (name, title, ffmpeg output arguments) of the stress set
+STRESS: list[tuple[str, str, list[str]]] = [
+    ("mp3_cbr032_22k_mono.mp3", "MP3 CBR 32k 22kHz mono",
+     ["-ar", "22050", "-ac", "1", "-c:a", "libmp3lame", "-b:a", "32k"]),
+    ("mp3_cbr064.mp3", "MP3 CBR 64k", ["-c:a", "libmp3lame", "-b:a", "64k"]),
+    ("mp3_cbr128.mp3", "MP3 CBR 128k", ["-c:a", "libmp3lame", "-b:a", "128k"]),
+    ("mp3_cbr192.mp3", "MP3 CBR 192k", ["-c:a", "libmp3lame", "-b:a", "192k"]),
+    ("mp3_cbr256.mp3", "MP3 CBR 256k", ["-c:a", "libmp3lame", "-b:a", "256k"]),
+    ("mp3_cbr320.mp3", "MP3 CBR 320k", ["-c:a", "libmp3lame", "-b:a", "320k"]),
+    ("mp3_vbr_v0.mp3", "MP3 VBR V0", ["-c:a", "libmp3lame", "-q:a", "0"]),
+    ("mp3_vbr_v5.mp3", "MP3 VBR V5", ["-c:a", "libmp3lame", "-q:a", "5"]),
+    ("mp3_cbr192_48k.mp3", "MP3 CBR 192k 48kHz",
+     ["-ar", "48000", "-c:a", "libmp3lame", "-b:a", "192k"]),
+    ("mp3_cbr128_32k.mp3", "MP3 CBR 128k 32kHz",
+     ["-ar", "32000", "-c:a", "libmp3lame", "-b:a", "128k"]),
+    ("mp2_192.mp2", "MP2 192k", ["-c:a", "mp2", "-b:a", "192k"]),
+    ("aac_lc_096.m4a", "AAC-LC 96k", ["-c:a", "aac", "-b:a", "96k"]),
+    ("aac_lc_128.m4a", "AAC-LC 128k", ["-c:a", "aac", "-b:a", "128k"]),
+    ("aac_lc_256.m4a", "AAC-LC 256k", ["-c:a", "aac", "-b:a", "256k"]),
+    ("aac_lc_128_48k.m4a", "AAC-LC 128k 48kHz", ["-ar", "48000", "-c:a", "aac", "-b:a", "128k"]),
+    ("alac_16_44.m4a", "ALAC 16/44", ["-c:a", "alac"]),
+    ("vorbis_q0.ogg", "Vorbis q0", ["-c:a", "libvorbis", "-q:a", "0", *OGG_PAGES]),
+    ("vorbis_q3.ogg", "Vorbis q3", ["-c:a", "libvorbis", "-q:a", "3", *OGG_PAGES]),
+    ("vorbis_q5.ogg", "Vorbis q5", ["-c:a", "libvorbis", "-q:a", "5", *OGG_PAGES]),
+    ("vorbis_q5_48k.ogg", "Vorbis q5 48kHz",
+     ["-ar", "48000", "-c:a", "libvorbis", "-q:a", "5", *OGG_PAGES]),
+    ("opus_032.opus", "Opus 32k", ["-c:a", "libopus", "-b:a", "32k", *OGG_PAGES]),
+    ("opus_064.opus", "Opus 64k", ["-c:a", "libopus", "-b:a", "64k", *OGG_PAGES]),
+    ("opus_128.opus", "Opus 128k", ["-c:a", "libopus", "-b:a", "128k", *OGG_PAGES]),
+    ("opus_192.opus", "Opus 192k", ["-c:a", "libopus", "-b:a", "192k", *OGG_PAGES]),
+    ("flac_16_44_l0.flac", "FLAC 16/44 level 0",
+     ["-c:a", "flac", "-frame_size", "4096", "-compression_level", "0"]),
+    ("flac_16_44_l8.flac", "FLAC 16/44 level 8",
+     ["-c:a", "flac", "-frame_size", "4096", "-compression_level", "8"]),
+    ("flac_16_48.flac", "FLAC 16/48", ["-ar", "48000", "-c:a", "flac", "-frame_size", "4096"]),
+    ("flac_24_96.flac", "FLAC 24/96",
+     ["-ar", "96000", "-sample_fmt", "s32", "-c:a", "flac", "-frame_size", "4096"]),
+    ("wav_16_44.wav", "WAV 16/44", ["-c:a", "pcm_s16le"]),
+    ("wav_16_22_mono.wav", "WAV 16/22 mono", ["-ar", "22050", "-ac", "1", "-c:a", "pcm_s16le"]),
+    ("wav_24_96.wav", "WAV 24/96", ["-ar", "96000", "-c:a", "pcm_s24le"]),
+    ("wav_ima_adpcm.wav", "WAV IMA ADPCM", ["-c:a", "adpcm_ima_wav"]),
+    ("wav_mulaw_8k.wav", "WAV mu-law 8kHz", ["-ar", "8000", "-ac", "1", "-c:a", "pcm_mulaw"]),
+    ("aiff_16_44.aiff", "AIFF 16/44", ["-c:a", "pcm_s16be"]),
+    ("au_16_44.au", "AU 16/44", ["-c:a", "pcm_s16be"]),
+    ("wavpack_16_44.wv", "WavPack 16/44", ["-c:a", "wavpack", "-frame_size", "22050"]),
+    ("wavpack_16_44_hi.wv", "WavPack 16/44 high",
+     ["-c:a", "wavpack", "-frame_size", "22050", "-compression_level", "3"]),
+    ("tta_16_44.tta", "TTA 16/44", ["-c:a", "tta"]),
+    ("ac3_192.ac3", "AC3 192k", ["-c:a", "ac3", "-b:a", "192k"]),
+    ("ac3_448.ac3", "AC3 448k", ["-c:a", "ac3", "-b:a", "448k"]),
+    ("speex_wb.spx", "Speex 16kHz", ["-ar", "16000", "-ac", "1", "-c:a", "libspeex"]),
 ]
 
 # Low priority and few threads: the bench's capture publishers and test
@@ -249,3 +316,26 @@ def load(out: Path) -> list[Entry]:
         raise MediaError(f"no {f}: make the set with `arb media {out}` and copy it to the "
                          "card") from None
     return [Entry(**e) for e in data["files"]]
+
+
+def stress(out: Path, source: Path, *, start: float = 0.0,
+           echo: Callable[[str], object] = print) -> list[Path]:
+    """Writes the stress set from SOURCE (its clips start START s into it):
+    OUT/stress/ and OUT/STRESS_PLAYLIST; returns the clips"""
+    if not source.is_file():
+        raise FileNotFoundError(f"no stress source {source}")
+    folder = out / "stress"
+    folder.mkdir(parents=True, exist_ok=True)
+    clips = []
+    for name, title, args in STRESS:
+        clip = folder / name
+        _encode(["-ss", str(start), "-i", str(source)],
+                ["-t", str(STRESS_S), "-map", "0:a", "-map_metadata", "-1",
+                 "-metadata", f"title={title}", "-metadata", f"artist=Stress: {source.stem}",
+                 "-metadata", "album=Codec stress set", *args], clip)
+        clips.append(clip)
+        echo(f"{clip.stat().st_size // 1024:6d} KB  {title}")
+    playlist = out / STRESS_PLAYLIST
+    playlist.parent.mkdir(exist_ok=True)
+    playlist.write_text("".join(f"/{folder.name}/{c.name}\n" for c in clips))
+    return clips

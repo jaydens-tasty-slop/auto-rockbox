@@ -1,17 +1,28 @@
 """Test media: step-down detection, the OKI ADPCM encoder and spectrum
-classification (the last with ffmpeg, if present)."""
+classification (the last with ffmpeg, if present); the stress set's cases
+(against yp3dev/stress_set.py where the port's checkout has it), its command
+and, with ffmpeg, the set itself in 1 s clips."""
 
 from __future__ import annotations
 
+import contextlib
+import importlib
+import io
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
-from auto_rockbox import linein, media
+import auto_rockbox.commands.media  # noqa: F401  (registers `arb media-stress`)
+from auto_rockbox import cli, linein, media
+from auto_rockbox.registry import Context
+from auto_rockbox.workspace import Workspace
 
 RATE = media.RATE
 
@@ -82,6 +93,71 @@ class TestAnalysis(unittest.TestCase):
             e = media.describe(root, write_wav(
                 root / "t.wav", np.concatenate([tone(1000, 1500, 4), tone(1000, 1500, 2, -22)])))
             assert e == media.Entry("t.wav", "stereo", 6.0, 4.0), e
+
+
+PORT = Path(__file__).resolve().parents[3]          # rockbox-yp3, if auto-rockbox sits in it
+# The extensions Rockbox picks the stress set's codecs by
+PLAYABLE = {".mp3", ".mp2", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".aiff", ".au", ".wv",
+            ".tta", ".ac3", ".spx"}
+
+
+def tags(path: Path) -> dict[str, str]:
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags",
+                          "-of", "default=nw=1", str(path)], capture_output=True, text=True,
+                         check=True).stdout
+    return {k.removeprefix("TAG:").lower(): v for k, _, v in
+            (line.partition("=") for line in out.splitlines())}
+
+
+class TestStress(unittest.TestCase):
+    def test_cases(self) -> None:
+        names = [n for n, _, _ in media.STRESS]
+        assert len(set(names)) == len(names) == 41
+        assert len({t for _, t, _ in media.STRESS}) == 41
+        for name, _, args in media.STRESS:
+            assert Path(name).suffix in PLAYABLE, name
+            assert "-c:a" in args, name
+            if Path(name).suffix in (".ogg", ".opus"):
+                assert args[-2:] == media.OGG_PAGES, name     # not ffmpeg's 1 s pages
+            if Path(name).suffix == ".flac":
+                assert "-frame_size" in args, name            # not the source's block size
+
+    @unittest.skipUnless((PORT / "yp3dev/stress_set.py").exists(), "no yp3dev/stress_set.py")
+    def test_cases_as_yp3dev(self) -> None:
+        sys.path.insert(0, str(PORT / "yp3dev"))
+        try:                # its bytecode is not written there
+            with patch.object(sys, "dont_write_bytecode", True):
+                old = importlib.import_module("stress_set")
+        finally:
+            sys.path.remove(str(PORT / "yp3dev"))
+        cases = [(f"{stem}.{ext}", title, args) for stem, title, args, ext in old.CASES]
+        assert cases == media.STRESS
+        assert media.STRESS_S == old.SECONDS
+
+    def test_command_without_source(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            ws = Workspace(Path(d), {"media": {"stress_source": "song.flac"}})
+            args = cli.parser(ws).parse_args(["media-stress", str(Path(d, "out"))])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                assert args._command.fn(Context(ws), args) == 1
+            assert f"no stress source {Path(d, 'song.flac')}" in err.getvalue(), err.getvalue()
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "no ffmpeg")
+    def test_stress(self) -> None:
+        with tempfile.TemporaryDirectory() as d, patch.object(media, "STRESS_S", 1):
+            root = Path(d)
+            song = write_wav(root / "song.wav", tone(440, 660, 3))
+            printed: list[str] = []
+            clips = media.stress(root / "out", song, start=0.5, echo=printed.append)
+            assert [c.name for c in clips] == [n for n, _, _ in media.STRESS]
+            assert all(c.stat().st_size > 0 for c in clips) and len(printed) == 41
+            playlist = (root / "out" / media.STRESS_PLAYLIST).read_text().splitlines()
+            assert playlist == [f"/stress/{n}" for n, _, _ in media.STRESS], playlist
+            mp3 = root / "out/stress/mp3_cbr128.mp3"
+            mine = {"title": "MP3 CBR 128k", "artist": "Stress: song", "album": "Codec stress set"}
+            assert mine.items() <= tags(mp3).items(), tags(mp3)      # and ffmpeg's encoder
+            assert media.duration(root / "out/stress/wav_16_44.wav") == 1.0
 
 
 if __name__ == "__main__":

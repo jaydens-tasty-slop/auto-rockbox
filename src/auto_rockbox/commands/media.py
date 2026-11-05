@@ -1,4 +1,5 @@
-"""`arb media`: the codec and video test media."""
+"""`arb media`: the codec and video test media; `arb media-stress`: the
+codec stress set (auto_rockbox.media)."""
 
 from __future__ import annotations
 
@@ -35,4 +36,31 @@ def media_cmd(ctx: Context, args: Namespace) -> int:
         print(f"arb media: {e}", file=sys.stderr)
         return 1
     print(args.out / "manifest.json")
+    return 0
+
+
+@command("media-stress", help="make the codec stress set: a music clip per codec case",
+         target=False, args=[
+             arg("out", type=Path,
+                 help="output directory: stress/ and Playlists/, for the card root"),
+             arg("--source", type=Path, metavar="FILE",
+                 help="music to encode (default [media] stress_source, "
+                      "build/audio/codecs/flac_16_44.flac); a real song makes glitches easy "
+                      "to hear"),
+             arg("--start", type=float, default=0.0, metavar="S",
+                 help="seconds into the source where each clip starts (default 0)"),
+         ])
+def media_stress(ctx: Context, args: Namespace) -> int:
+    """Encodes a 30 s clip of the source per codec, bitrate and rate case,
+    each titled by its case, and a playlist of them all, Playlists/Stress
+    test.m3u8 (see auto_rockbox.media). Copy OUT's contents to the card
+    root, e.g. `arb yp3 card-run 'cp -r OUT/. "$MP/"'`."""
+    source = args.source or ctx.ws.section("media").path(
+        "stress_source", "build/audio/codecs/flac_16_44.flac")
+    try:
+        clips = media.stress(args.out, source, start=args.start)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"arb media-stress: {e}", file=sys.stderr)
+        return 1
+    print(f"{len(clips)} clips -> {args.out}")
     return 0
