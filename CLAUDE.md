@@ -40,6 +40,9 @@ handling. One `Target` subclass per player; everything else is shared.
   behind.
 - One process per device: the tools lock each device. Never kill other
   processes by pattern (`pkill`, `killall`).
-- No stock firmware bytes, dumps or code derived from stock in this
-  repository. Register facts and data tables are fine.
+- No stock firmware bytes or dumps in this repository. Register facts,
+  init values and data tables are fine. Host tooling and payloads may
+  follow the register sequence a stock or ROM routine uses (say so in a
+  comment); firmware drivers that ship never contain anything derived from
+  stock (skills/bring-up.md, Ground rules).
 - Before a hardware step, write down what it tests and why.

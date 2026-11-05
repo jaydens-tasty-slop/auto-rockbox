@@ -14,7 +14,7 @@ the current directory, like pyproject.toml.
     rotate = 180
 
     [targets.ts17]
-    card_uuid = "0C47-FBCA"
+    card_uuid = "1234-ABCD"
 
     [plugins]
     modules = ["tools/arb_local.py"]
