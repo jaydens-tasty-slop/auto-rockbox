@@ -27,13 +27,13 @@ from ...registry import register_target
 from ...shell import Shell
 from ...target import Battery, Lcd, RunRequest, Target
 from ...workspace import ConfigError, Workspace
-from . import adfu, commands, devblock, gadget, nor, power, rdm, soak
+from . import adfu, commands, devblock, gadget, nor, power, rdm, soak, torture
 from .adfu import Ts17Error
 
 if TYPE_CHECKING:
     from PIL.Image import Image
 
-__all__ = ["Ts17", "Ts17Error", "commands", "soak"]
+__all__ = ["Ts17", "Ts17Error", "commands", "soak", "torture"]
 
 FB_SYMBOL = "lcd_static_framebuffer"    # Rockbox's framebuffer, in SRAM at the gadget's output
 FB_KEEP = 0x100                 # the gadget's status block and a few results: what the
@@ -60,6 +60,11 @@ class Ts17(Target):
                      the device and dev-shell lock files in the temp dir
                      (default: auto-rockbox-ts17[-shell].lock); "ts17dev.lock"
                      makes arb and ts17dev exclude each other
+        bt_address   the player's BD_ADDR: torture's bt-* scenarios (with
+                     [bluetooth] sink and adapter); default none
+        menu_coverage = "<paths.build>/menu-coverage-ts17.json"
+                     the torture crawl's graph of the UI, kept across runs
+    Torture: targets/ts17/torture.py, suites/rockbox_torture.py.
 
     Run settings (--set): those of apps/dev_shell.c (volume=DB, play=,
     bluetooth=off, usb=storage, ...; devblock.SETTINGS), and trace=1, a

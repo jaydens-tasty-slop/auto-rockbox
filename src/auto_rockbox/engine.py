@@ -15,10 +15,13 @@ Scenarios register like commands (registry.py):
     @scenario("tone", suite="soak", weight=2)
     def tone(step: StepContext) -> Outcome: ...
 
-    @scenario("fmregs", suite="torture", target={"yp3"}, needs={"fm"})
+    @scenario("fm", suite="torture", target={"yp3"})
+    @scenario("sleep", suite="torture", needs={"lcd-gate"})
 
-`needs` names target capabilities or suite features; a scenario is only in a
-run whose target and suite have them all. Per step the run directory gets
+`target` limits a scenario to those players (a player's own beats a generic
+one of the same name); `needs` names target capabilities or suite features
+(Suite.features), and a scenario is only in a run whose target and suite
+have them all. Per step the run directory gets
 `NNN-name.txt` (the scenario's output), a line in `steps.jsonl`, and
 `NNN-name.png` when the suite makes contact sheets.
 """
@@ -118,13 +121,16 @@ class Step:
 
 
 class Suite:
-    """The hooks a kind of run provides around its scenarios"""
+    """The hooks a kind of run provides around its scenarios. FEATURES: what
+    this run of it has, on top of the target's capabilities (a player's
+    torture suite declares its build's; an instance adds what its config
+    allows)"""
 
     name = ""
+    features: frozenset[str] = frozenset()
 
     def __init__(self, target: Target) -> None:
         self.target = target
-        self.features: frozenset[str] = frozenset()
 
     def start(self, out: Path) -> None:
         """Before the first step (boot the player, set things up)"""

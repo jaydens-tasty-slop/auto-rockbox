@@ -15,12 +15,12 @@ from ... import fb
 from ...elf import Elf
 from ...registry import Context, arg, command
 from ...run import parse_settings, report, run
+from ...shot import screenshot
 from . import Yp3, Yp3Run, prof
 from .image import ImageError, parse_blob, parse_push
 from .power import ChargeLog
 from .retained import decode_fault, decode_threads, trace_names
 from .rom import IMAGE_SIZE, PMU_REASON, PMU_RESET, PMU_WAKE, Op, wait_rom
-from .shot import screenshot
 
 YP3 = {"yp3"}
 

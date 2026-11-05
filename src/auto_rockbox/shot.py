@@ -1,12 +1,12 @@
-"""A screenshot of the running player through its dev shell: `shot` prints the
-framebuffer as rows `fb Y HEX` (the row's bytes as they are in memory), and
-`shot Y0 Y1` prints rows Y0..Y1 again. The serial link loses a chunk now and
-then when this PC is slow to read, so missing rows are fetched again.
+"""A screenshot of the running player through its dev shell (apps/dev_shell.c):
+`shot` prints the framebuffer as rows `fb Y HEX` (the row's bytes as they are
+in memory), and `shot Y0 Y1` prints rows Y0..Y1 again. The serial link loses
+a chunk now and then when this PC is slow to read, so missing rows are
+fetched again.
 
 A sleeping LCD shows the frame from before it slept: wake it with a key first.
-The SRAM framebuffer is not read after a watchdog return instead: the ROM
-reuses SRAM next to it (the scheduler tables just below hold ROM strings
-then), so whether the picture survives is unproven.
+(The YP3 has no framebuffer read after a return instead: its ROM reuses the
+SRAM next to it, so whether the picture survives is unproven.)
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ from contextlib import suppress
 
 from PIL.Image import Image
 
-from ... import fb
-from ...errors import ArbError
-from ...shell import Reply
-from ...target import Lcd
+from . import fb
+from .errors import ArbError
+from .shell import Reply
+from .target import Lcd
 
 Send = Callable[[str], Reply]      # one shell command line, its reply
 

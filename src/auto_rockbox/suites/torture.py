@@ -11,10 +11,10 @@ is judged, and when:
               PCM underruns, playback stalls, the UI thread missing its ping),
               from where a scenario takes its baseline to its check_health();
               a scenario names those its own work raises on purpose
-    after     every step: the player's own after-step checks (after_step: the
-              YP3 reads the messages it showed, decode hashes, the charger)
-    busy      a background job the next step must not start under (busy(): the
-              YP3's database build), waited for up to BUSY_WAIT_S
+    after     every step: the suite's after-step checks (after_step: a Rockbox
+              build's messages, decode hashes, the charger)
+    busy      a background job the next step must not start under (busy(): a
+              database build), waited for up to BUSY_WAIT_S
     free      free memory read in comparable states (settled()): its ceiling
               must not fall more than FREE_DRIFT below the first after a boot
     lost      the shell goes away or stops replying: the player crashed, hung
@@ -28,7 +28,10 @@ is judged, and when:
 Scenarios register with this module's `scenario` (the engine's, for this
 suite) and get the suite itself, a player's subclass of TortureSuite that
 knows its shell's commands (`@player_suite("yp3")`). They record problems with
-fail(), and return the step's note.
+fail(), and return the step's note. Rockbox dev builds share one shell: their
+suites subclass RockboxTorture (suites/rockbox_torture.py), which holds the
+scenarios every player runs; a player's module (targets/NAME/torture.py)
+adds what only its own shell or hardware has.
 
 The dev shell contract (skills/adding-a-target.md): one command per line, the
 reply ended by `ok` or `err ...`; `health [reset]` answers a line "health KEY
@@ -448,15 +451,20 @@ class TortureSuite(Suite):
 
     # ---- boots and crashes
 
-    def boot(self) -> None:
-        """The image afresh: the player back on the host, launched with its
-        shell, set up (prepare) and its counters zeroed"""
+    def to_host(self) -> None:
+        """The player in the host's flashing mode: asked through its shell if
+        that is up, else waited for"""
         if self.shell_up():
             if not self.back_to_host(ASK_WAIT_S):
                 raise TortureError(f"the {self.target.name} did not go back to the host")
         elif not self.wait_host(HOST_WAIT_S):
             raise TortureError(f"the {self.target.name} did not reach the host in "
                                f"{HOST_WAIT_S} s: it needs its manual recovery")
+
+    def boot(self) -> None:
+        """The image afresh: the player back on the host, launched with its
+        shell, set up (prepare) and its counters zeroed"""
+        self.to_host()
         req = self.boot_request()
         self.target.before_run(req)
         self.target.launch(req)

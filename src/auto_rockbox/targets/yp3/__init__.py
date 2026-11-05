@@ -84,10 +84,12 @@ class Yp3(Target):
                        the device and dev-shell lock files in the temp dir
                        (default: auto-rockbox-yp3[-shell].lock); "yp3dev.lock" and
                        "yp3dev-sh.lock" make arb and yp3dev exclude each other
-        menu_coverage = "<paths.build>/menu-coverage.json"
+        bt_address     the player's BD_ADDR: torture's bt-* scenarios (with
+                       [bluetooth] sink and adapter) and `bt-peer hid`; default none
+        menu_coverage = "<paths.build>/menu-coverage-yp3.json"
                        the torture crawl's graph of the UI, kept across runs
-    Torture's bt-* scenarios read [bluetooth] player and sink, its ledger
-    [torture] ledger (targets/yp3/torture.py, suites/torture.py).
+    Torture's ledger is [torture] ledger (targets/yp3/torture.py,
+    suites/rockbox_torture.py, suites/torture.py).
     """
 
     name = "yp3"

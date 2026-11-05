@@ -119,6 +119,10 @@ the workspace's `[plugins] modules`.
 - **Soak scenarios**: `@scenario("tone", suite="soak", target={"myplayer"})`.
   Menu layouts and key paths are player specific, so the soak's scenarios
   live with the target.
+- **Torture**: a `RockboxTorture` subclass in the subpackage's `torture.py`
+  with `@player_suite("myplayer")`, its `card_dir` (the build's
+  `DEV_CARD_DIR`) and the features its build has; the shared scenarios
+  then run on it ([testing.md](testing.md), Torture suites).
 - **Nothing personal in code**: card UUIDs, Bluetooth addresses, backup image
   paths and tool paths come from `self.conf` (the `[targets.<name>]` table).
   Document each key in the class docstring with its default.

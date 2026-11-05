@@ -4,8 +4,11 @@ simulator, and this PC's adapter as a sink or a headset for a player; `arb
 yp3 bt-peer hid`: the adapter as an input device for a player on its dev
 shell.
 
+    [targets.yp3]
+    bt_address = "AA:BB:CC:DD:EE:FF"    # the player's BD_ADDR (yp3 bt-peer hid)
+
     [bluetooth]
-    player = "AA:BB:CC:DD:EE:FF"    # the player's BD_ADDR (pcheadset, yp3 bt-peer hid)
+    player = "AA:BB:CC:DD:EE:FF"    # a player's BD_ADDR for the host commands (pcheadset)
     adapter = "usb:VID:PID"         # this PC's adapter as a Bumble transport (pcheadset,
                                     # yp3 bt-peer hid); Bumble takes it from BlueZ
     sim_hci = "127.0.0.1:6402"      # where the virtual controller serves the simulator
@@ -170,7 +173,10 @@ def hid_air_cmd(ctx: Context, args: Namespace) -> int:
     from ..btpeer import hid  # noqa: PLC0415
     adapter = _setting(ctx, args.adapter, "adapter", "a Bumble transport, usb:VID:PID",
                        "--adapter")
-    player = _setting(ctx, args.addr, "player", "its BD_ADDR", "--addr")
+    player = args.addr or ctx.t.conf.get("bt_address")
+    if not isinstance(player, str):
+        raise ConfigError(f"no --addr given and no [targets.{ctx.t.name}] bt_address "
+                          "(its BD_ADDR)")
     opts = _hid_options(ctx, args)
     opts.stay, opts.play = args.stay, args.play
     return hid.main_air(opts, ctx.t.shell(), adapter, player)
@@ -248,6 +254,7 @@ _FORGET = arg("--forget", action="store_true", help="delete the stored link keys
 _ADAPTER = arg("--adapter", help="this PC's adapter, a Bumble transport such as usb:VID:PID "
                "(default [bluetooth] adapter)")
 _ADDR = arg("--addr", help="the player's BD_ADDR (default [bluetooth] player)")
+_TARGET_ADDR = arg("--addr", help="the player's BD_ADDR (default [targets.NAME] bt_address)")
 
 _HID_COMMON = [
     arg("--kind", choices=sorted(KINDS), default="ds4", help="the device (default ds4)"),
@@ -352,7 +359,7 @@ command("bt-peer hid", target=False, help="virtual DualShock 4 or keyboard again
 
 command("bt-peer hid", target={"yp3"}, needs={"shell"},
         help="this PC's adapter as a DualShock 4 or keyboard for the player", args=[
-    *_HID_COMMON, _ADAPTER, _ADDR,
+    *_HID_COMMON, _ADAPTER, _TARGET_ADDR,
     arg("--stay", type=float, default=0.0, metavar="S",
         help="stay connected S s more after the presses, polling the link and health"),
     arg("--play", metavar="FILE", help="the player plays FILE meanwhile"),

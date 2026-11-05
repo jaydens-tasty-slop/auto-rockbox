@@ -37,7 +37,10 @@ arb yp3 torture build/yp3/rockbox.elf build/torture-RUN --until 07:00 --seed 3
   auto-connects at boot to the last device it paired with. If that device
   is this PC, the test audio goes to the PC's speakers or headphones
   instead of Line In. The TS17 soak boots with `bluetooth=off` unless
-  `--set bluetooth=card` says otherwise (`Target.soak_settings`).
+  `--set bluetooth=card` says otherwise (`Target.soak_settings`). Torture
+  keeps the player's stream on a null sink when the player's `bt_address`
+  is configured (its bt-* scenarios need it), and the TS17's torture boots
+  with Bluetooth off when it is not.
 - `--only a,b` and `--weights a=5,b=0` focus a run on one area, for
   example to check a fix. `--seed` repeats a sequence.
 - Watch the run log for `FAIL`, `LOST` and tracebacks. Don't poll it.
@@ -96,9 +99,40 @@ def radio(step: StepContext) -> Outcome:
   counter has a budget. Going over it is a failure even when the step
   itself passed.
 
-Scenarios for one player go in `targets/NAME/soak.py` or
-`targets/NAME/torture.py`. Scenarios that only need the `Target` API go in
+Soak scenarios follow a player's menus, so they go in
+`targets/NAME/soak.py`. Scenarios that only need the `Target` API go in
 `suites/`.
+
+### Torture suites
+
+Every player's dev build has the same shell (`apps/dev_shell.c`), so the
+torture scenarios are shared: `suites/rockbox_torture.py` holds them and
+`RockboxTorture`, the suite they run in. Each player has a subclass in
+`targets/NAME/torture.py`, registered with `@player_suite("NAME")`, that
+declares what differs:
+
+- `card_dir`, the build's `DEV_CARD_DIR` (required): the settings files the
+  steps load and the tone live there. By default the suite writes the
+  settings files once per run over USB mass storage; the YP3 pushes them
+  with every boot instead.
+- `main_menu`, `slow_codecs`, `expected_msgs` (errors a scenario provokes
+  on purpose, such as the YP3's heap limits), `charge_limit`, and
+  `boot_settings()` (the TS17 boots with `bluetooth=off` unless its
+  `bt_address` is configured).
+- `features`, what the build has that some scenarios need (`needs=`):
+  `lcd-gate`, `fm-tune`. A player without one simply does not run those
+  scenarios. What every scenario relies on comes with the shared dev layer:
+  Home selects the main menu's first item, and `dryoff` turns a menu
+  power-off into a return to the host. The bt-*
+  scenarios need `[targets.NAME] bt_address`.
+- Hooks for the player's own shell commands and records: `prepare()`,
+  `gate_on()`, `fm_tune()`, `bt_fail_details()`, and the crash records
+  (`records()`, `wait_host()`, `expected_return()`).
+
+A scenario that needs commands only one player's shell has (the YP3's `fm`,
+`fmregs`, `fmmon`) registers in that player's module with `target={"NAME"}`.
+New shared scenarios go in `suites/rockbox_torture.py` (`rockbox_scenario`),
+gated by a feature when a player may lack what they need.
 
 ## Bluetooth peers
 
