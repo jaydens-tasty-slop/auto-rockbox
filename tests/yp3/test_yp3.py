@@ -53,7 +53,7 @@ def names() -> retained.Names:
 
 def functions_at(n: int) -> list[int]:
     """Addresses a little way into N distinct sized functions"""
-    funcs = [f for f in prof.functions(Elf(ELF)) if f[1] >= 16]
+    funcs = [f for f in Elf(ELF).functions if f[1] >= 16]
     step = len(funcs) // n
     return [funcs[i * step][0] + 4 for i in range(n)]
 
@@ -394,7 +394,7 @@ def test_shot_refetches_lost_rows() -> None:
 def test_profile_matches_profile_py() -> None:
     if not have_port():
         raise Skip(NO_PORT)
-    funcs = prof.functions(Elf(ELF))
+    funcs = Elf(ELF).functions
     pcs = functions_at(40)
     dump = "\n".join(" ".join(f"{p + 2 * (i % 3):x}" for i, p in enumerate(pcs[k:k + 10]))
                      for k in range(0, 40, 10)) + "\nprof: 40 samples\nok\n"

@@ -28,6 +28,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import importlib.util
+import inspect
 import sys
 from argparse import Namespace
 from collections.abc import Callable, Iterable
@@ -100,8 +101,8 @@ def command(name: str | None = None, *, help: str, args: Iterable[Arg] = (),
         host = target is False
         targets = None if isinstance(target, bool) else frozenset(target)
         default = getattr(fn, "__name__", "").removesuffix("_cmd").replace("_", "-")
-        _commands.append(Command(name or default, fn, help, list(args),
-                                 targets, host, frozenset(needs), (fn.__doc__ or "").strip()))
+        _commands.append(Command(name or default, fn, help, list(args), targets, host,
+                                 frozenset(needs), inspect.cleandoc(fn.__doc__ or "")))
         return fn
     return register
 

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
-from ... import card
+from ... import card, keys
 from ...elf import Symbolizer
 from ...registry import register_target
 from ...shell import Shell, find_tty
@@ -80,6 +80,10 @@ class Yp3(Target):
                        a line per battery reading and charger change
         card_uuid      the card's filesystem UUID for mass storage (default: the
                        one Rockbox USB disk)
+        lock, shell_lock
+                       the device and dev-shell lock files in the temp dir
+                       (default: auto-rockbox-yp3[-shell].lock); "yp3dev.lock" and
+                       "yp3dev-sh.lock" make arb and yp3dev exclude each other
     """
 
     name = "yp3"
@@ -237,6 +241,12 @@ class Yp3(Target):
     def battery(self) -> Battery:
         return self._guard(stop=False)
 
+    def key_duration_ms(self, script: str) -> int:
+        """apps/yp3_dev.c holds a key 1 s for any number of +, 1.2 s for *"""
+        hold = {"+": 1000, "*": 1200}
+        return sum(int(t) if t.isdigit() else keys.TAP_MS + hold.get(t[-1], 0)
+                   for t in keys.tokens(script))
+
     def _guard(self, stop: bool) -> Battery:
         return guard(self.rom(), self.conf.integer("charge_limit_mv", CHARGE_LIMIT_MV),
                      self.battery_log, stop)
@@ -244,12 +254,15 @@ class Yp3(Target):
     def shell(self) -> Shell:
         names = self.function_names()
         return Shell(self.name, SHELL_VID, SHELL_PID,
-                     annotate=lambda line: annotate_ticks(line, names))
+                     annotate=lambda line: annotate_ticks(line, names),
+                     lock_file=self.conf.string("shell_lock", "") or None)
 
     @contextmanager
-    def mass_storage(self, seconds: int) -> Generator[Path]:
-        """Boots the default ELF with usb=storage (speaker off) for SECONDS"""
-        req = RunRequest(self.default_elf, seconds, settings={"usb": "storage", "speaker": "0"})
+    def mass_storage(self, seconds: int, image: Path | None = None) -> Generator[Path]:
+        """Boots IMAGE (default: config `elf`) with usb=storage (speaker off)
+        for SECONDS"""
+        req = RunRequest(image or self.default_elf, seconds,
+                         settings={"usb": "storage", "speaker": "0"})
         self.to_rom()
         uuid = self.conf.string("card_uuid") if "card_uuid" in self.conf.data else None
         with self.lock():

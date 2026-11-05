@@ -6,20 +6,11 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from .. import fb, keys, registry
+from .. import fb, registry
+from ..errors import UsageError
 from ..registry import Context, arg, command
-from ..run import run
+from ..run import parse_settings, report, run
 from ..target import RunRequest
-
-
-def _settings(pairs: list[str]) -> dict[str, str]:
-    out = {}
-    for p in pairs:
-        k, sep, v = p.partition("=")
-        if not sep:
-            raise SystemExit(f"--set {p}: KEY=VALUE needed")
-        out[k] = v
-    return out
 
 
 @command("targets", help="list the players this install knows", target=False)
@@ -46,28 +37,21 @@ def run_cmd(ctx: Context, args: Namespace) -> int:
     """Puts IMAGE on the player with a run config (return time, key script,
     settings), starts it, waits for it to come back to the host and prints
     the log it left. Exit status 3 if it did not come back in time."""
-    req = RunRequest(args.image, args.seconds, args.keys, _settings(args.settings),
+    req = RunRequest(args.image, args.seconds, args.keys, parse_settings(args.settings),
                      args.cold, args.usb)
     t = ctx.t
     if req.cold and not t.has("cold"):
-        raise SystemExit(f"{t.name}: no --cold boot")
+        raise UsageError(f"{t.name}: no --cold boot")
     if req.usb and not t.has("usb"):
-        raise SystemExit(f"{t.name}: no --usb")
-    r = run(t, req, args.shots)
-    if not r.returned:
-        print(f"no return within {req.seconds + t.return_margin:.0f} s", file=sys.stderr)
-        return 3
-    print(f"back after {r.elapsed:.1f} s")
-    print(r.log, end="" if r.log.endswith("\n") else "\n")
-    if r.sheet and r.sheet.exists():
-        print(f"contact sheet {r.sheet}")
-    return 0
+        raise UsageError(f"{t.name}: no --usb")
+    return report(t, req, run(t, req, args.shots))
 
 
-@command("log", help="print the dev log the last run left")
+@command("log", help="print the dev log the last run left",
+         args=[arg("elf", type=Path, nargs="?", help="the ELF that ran (names addresses)")])
 def log(ctx: Context, args: Namespace) -> int:
     with ctx.t.lock():
-        text = ctx.t.read_log()
+        text = ctx.t.read_log(args.elf)
     print(text, end="" if text.endswith("\n") else "\n")
     return 0
 
@@ -88,7 +72,7 @@ def fb_cmd(ctx: Context, args: Namespace) -> int:
          args=[arg("script")])
 def keys_cmd(ctx: Context, args: Namespace) -> int:
     ctx.t.check_keys(args.script)
-    print(f"ok, about {keys.duration_ms(args.script) / 1000:.1f} s")
+    print(f"ok, about {ctx.t.key_duration_ms(args.script) / 1000:.1f} s")
     return 0
 
 

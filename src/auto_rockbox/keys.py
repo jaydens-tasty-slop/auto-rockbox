@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import re
 
+from .errors import ArbError
+
 TAP_MS = 350        # a tap and the gap after it, about
 
 
-class KeyScriptError(ValueError):
+class KeyScriptError(ArbError, ValueError):
     pass
 
 

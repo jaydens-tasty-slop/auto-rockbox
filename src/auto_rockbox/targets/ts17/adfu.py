@@ -20,6 +20,8 @@ from typing import Any, Self
 import usb.core
 import usb.util
 
+from ...errors import ArbError
+
 VID = 0x10D6
 PID_ADFU = 0x10D6               # boot ROM download mode
 EP_IN, EP_OUT = 0x81, 0x02      # the ROM's bulk endpoints
@@ -38,7 +40,7 @@ TIMEOUT_MS = 1000
 DRAIN_TIMEOUT_MS = 50
 
 
-class Ts17Error(Exception):
+class Ts17Error(ArbError):
     """A failure of the TS17 tools: transport, protocol or a refused request"""
 
 

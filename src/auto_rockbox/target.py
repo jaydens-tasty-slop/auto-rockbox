@@ -36,7 +36,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
-from .keys import KeyScriptError, check_script
+from .errors import ArbError
+from .keys import KeyScriptError, check_script, duration_ms
 from .lock import DeviceLock
 from .workspace import Section, Workspace
 
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
     from .shell import Shell
 
 
-class Unsupported(Exception):
+class Unsupported(ArbError):
     """The target does not have this feature"""
 
 
@@ -95,7 +96,9 @@ class Target(ABC):
         self.conf: Section = ws.target(self.name)
 
     def lock(self) -> DeviceLock:
-        return DeviceLock(self.name)
+        """The device lock; config `lock` names its file (in the temp dir), so
+        that an older tool for the same player that flocks it is excluded"""
+        return DeviceLock(self.name, file=self.conf.string("lock", "") or None)
 
     def has(self, capability: str) -> bool:
         return capability in self.capabilities
@@ -104,6 +107,10 @@ class Target(ABC):
         if len(script.encode()) > self.keys_max:
             raise KeyScriptError(f"key script over {self.keys_max} bytes")
         check_script(script, self.key_letters, self.key_suffixes)
+
+    def key_duration_ms(self, script: str) -> int:
+        """How long the firmware takes over SCRIPT, about"""
+        return duration_ms(script)
 
     # The dev loop: put the image on the player and start it, with the run
     # config (return time, keys, settings) where the image will find it
@@ -115,8 +122,10 @@ class Target(ABC):
     @abstractmethod
     def wait_return(self, deadline: float, tick: Callable[[], None]) -> bool: ...
 
+    # The dev log the last run left; ELF (the image that ran, if known) can
+    # name the addresses in it
     @abstractmethod
-    def read_log(self) -> str: ...
+    def read_log(self, elf: Path | None = None) -> str: ...
 
     # Optional around a run: charger guards, reading back state
     def before_run(self, req: RunRequest) -> None:
@@ -134,8 +143,10 @@ class Target(ABC):
     def battery(self) -> Battery:
         raise Unsupported(f"{self.name}: no battery read")
 
-    # Boots a build as USB mass storage for up to SECONDS and yields the
-    # card's block device once this PC sees it; on exit waits for the player
-    # to return (auto_rockbox.card mounts and checks the device)
-    def mass_storage(self, seconds: int) -> AbstractContextManager[Path]:
+    # Boots IMAGE (default: the target's configured dev build) as USB mass
+    # storage for up to SECONDS and yields the card's block device once this
+    # PC sees it; on exit waits for the player to return. Takes the device
+    # lock itself (auto_rockbox.card mounts and checks the device).
+    def mass_storage(self, seconds: int,
+                     image: Path | None = None) -> AbstractContextManager[Path]:
         raise Unsupported(f"{self.name}: no USB mass storage")

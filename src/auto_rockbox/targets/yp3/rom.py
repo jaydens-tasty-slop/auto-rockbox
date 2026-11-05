@@ -26,6 +26,7 @@ from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
 
+from ...errors import ArbError
 from ...workspace import ConfigError
 
 ROM_VID, ROM_PID = "301a", "2800"   # the boot ROM's USB recovery device
@@ -87,7 +88,7 @@ INFO_NAMES = ("msp", "ipsr", "primask", "control", "vtor", "cpuid", "desc", "tim
               "timer_hi", "spi_c", "spi_10", "spi_20", "wdt_00")
 
 
-class DeviceError(RuntimeError):
+class DeviceError(ArbError):
     """The player did not answer as expected in ROM USB"""
 
 

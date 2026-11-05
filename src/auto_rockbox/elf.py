@@ -12,6 +12,7 @@ from pathlib import Path
 
 PT_LOAD = 1
 SHT_SYMTAB = 2
+STT_FUNC = 2
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,21 @@ class Elf:
                 if name_off:
                     out[_cstr(strs, name_off)] = (value, size)
         return out
+
+    @cached_property
+    def functions(self) -> list[tuple[int, int, str]]:
+        """(start, size, name) of every function symbol, sorted by start, with
+        the Thumb bit cleared"""
+        out = []
+        for h in self._shdrs:
+            if h[1] != SHT_SYMTAB:
+                continue
+            strs = self._strings(h[6])
+            for off in range(h[4], h[4] + h[5], 16):
+                name_off, value, size, info = struct.unpack_from("<IIIB", self.raw, off)
+                if name_off and info & 0xF == STT_FUNC:
+                    out.append((value & ~1, size, _cstr(strs, name_off)))
+        return sorted(out)
 
     def address(self, name: str) -> int:
         """A section's or else a symbol's address"""

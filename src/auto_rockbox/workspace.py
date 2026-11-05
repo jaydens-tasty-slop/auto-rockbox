@@ -27,10 +27,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .errors import ArbError
+
 CONFIG_NAME = "auto-rockbox.toml"
 
 
-class ConfigError(Exception):
+class ConfigError(ArbError):
     """A missing or malformed workspace setting"""
 
 

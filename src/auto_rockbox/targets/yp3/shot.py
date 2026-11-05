@@ -17,13 +17,14 @@ from contextlib import suppress
 from PIL.Image import Image
 
 from ... import fb
+from ...errors import ArbError
 from ...shell import Reply
 from ...target import Lcd
 
 Send = Callable[[str], Reply]      # one shell command line, its reply
 
 
-class ShotError(Exception):
+class ShotError(ArbError):
     pass
 
 

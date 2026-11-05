@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .errors import ArbError
 from .lock import DeviceLock
 
 
@@ -31,7 +32,7 @@ def find_tty(vid: str, pid: str) -> str | None:
     return None
 
 
-class NoShell(Exception):
+class NoShell(ArbError):
     pass
 
 
@@ -48,10 +49,13 @@ class Reply:
 
 class Shell:
     def __init__(self, name: str, vid: str, pid: str,
-                 annotate: Callable[[str], str] | None = None) -> None:
-        """ANNOTATE may add to a reply line, e.g. name the addresses in a trace"""
+                 annotate: Callable[[str], str] | None = None,
+                 lock_file: str | None = None) -> None:
+        """ANNOTATE may add to a reply line, e.g. name the addresses in a trace;
+        LOCK_FILE as for DeviceLock"""
         self.name, self.vid, self.pid = name, vid, pid
         self.annotate = annotate
+        self.lock_file = lock_file
 
     def port(self) -> str:
         p = find_tty(self.vid, self.pid)
@@ -63,7 +67,7 @@ class Shell:
     def __call__(self, line: str, timeout: float = 120.0,
                  echo: Callable[[str], None] | None = None) -> Reply:
         """Send LINE; the reply's lines, each also passed to ECHO as it comes"""
-        with DeviceLock(f"{self.name}-shell"):
+        with DeviceLock(f"{self.name}-shell", file=self.lock_file):
             fd = os.open(self.port(), os.O_RDWR | os.O_NOCTTY)
             try:
                 return self._talk(fd, line, timeout, echo)

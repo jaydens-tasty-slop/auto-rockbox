@@ -23,6 +23,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from ...elf import Elf
+from ...errors import ArbError
 from .rom import IMAGE_SIZE, SECTOR, WRITABLE
 
 XIP_ALIAS = 0xC00000        # flash offset 0 in the CPU's address space
@@ -41,7 +42,7 @@ DEV_CONFIG = 0x1F3000       # YP3_DEV_CONFIG_OFFSET: one sector of "key=value\n"
 BUNDLE_MAGIC = 0x48535059   # "YPSH": starts each sdpush entry
 
 
-class ImageError(ValueError):
+class ImageError(ArbError, ValueError):
     """The ELF, the base image or the run's extras do not make a valid image"""
 
 

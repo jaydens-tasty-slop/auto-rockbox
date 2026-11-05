@@ -4,27 +4,9 @@ lines of hex PCs) mapped to functions."""
 from __future__ import annotations
 
 import bisect
-import struct
 from collections import Counter
 
-from ...elf import Elf
-
-STT_FUNC = 2
 XIP_START = 0xC00000        # PCs from here are code running from flash (XIP)
-
-
-def functions(elf: Elf) -> list[tuple[int, int, str]]:
-    """(start, size, name) of the ELF's functions, sorted; Thumb bit cleared"""
-    symtab, strtab = elf.sections.get(".symtab"), elf.sections.get(".strtab")
-    if symtab is None or strtab is None:
-        raise ValueError(f"{elf.path}: no symbol table")
-    strs = elf.raw[strtab.offset:strtab.offset + strtab.size]
-    out = []
-    for off in range(symtab.offset, symtab.offset + symtab.size, 16):
-        name, value, size, info = struct.unpack_from("<IIIB", elf.raw, off)
-        if name and info & 0xF == STT_FUNC:
-            out.append((value & ~1, size, strs[name:strs.index(b"\0", name)].decode()))
-    return sorted(out)
 
 
 def samples(text: str) -> list[int]:

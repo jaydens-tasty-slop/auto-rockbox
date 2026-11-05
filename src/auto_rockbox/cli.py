@@ -9,10 +9,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from . import registry
+from .errors import ArbError
 from .registry import Command, Context
 from .workspace import ConfigError, Workspace
 
@@ -58,6 +60,11 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as e:
         print(f"arb: config: {e}", file=sys.stderr)
         return 2
+    except (ArbError, OSError) as e:
+        if os.environ.get("ARB_TRACEBACK"):
+            raise
+        print(f"arb: {e}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         return 130
     return rc or 0

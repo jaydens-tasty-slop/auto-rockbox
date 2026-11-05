@@ -10,16 +10,20 @@ import time
 from pathlib import Path
 from types import TracebackType
 
+from .errors import ArbError
 
-class DeviceBusy(Exception):
+
+class DeviceBusy(ArbError):
     pass
 
 
 class DeviceLock:
-    """An flock on a per-device file in the temp dir; waits up to TIMEOUT s"""
+    """An flock on a per-device file in the temp dir; waits up to TIMEOUT s.
+    FILE names another lock file (relative to the temp dir): a tool that
+    flocks the same file then excludes arb and the other way round."""
 
-    def __init__(self, name: str, timeout: float = 600.0) -> None:
-        self.path = Path(tempfile.gettempdir()) / f"auto-rockbox-{name}.lock"
+    def __init__(self, name: str, timeout: float = 600.0, file: str | None = None) -> None:
+        self.path = Path(tempfile.gettempdir()) / (file or f"auto-rockbox-{name}.lock")
         self.timeout = timeout
         self.fd: int | None = None
 

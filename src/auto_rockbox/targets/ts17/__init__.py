@@ -53,6 +53,10 @@ class Ts17(Target):
                      the first run: `nor restore` without an image puts stock's
                      fw0_sys back from it (default: none)
 
+        lock         the device lock file in the temp dir (default:
+                     auto-rockbox-ts17.lock); "ts17dev.lock" makes arb and
+                     ts17dev exclude each other
+
     Run settings (--set): trace=1 logs a thread dump before the return.
     """
 
@@ -130,7 +134,7 @@ class Ts17(Target):
             time.sleep(0.2)
         return False
 
-    def read_log(self) -> str:
+    def read_log(self, elf: Path | None = None) -> str:
         with adfu.Adfu() as link:
             total, size = devblock.ring_size(link.read(devblock.LOG, 12))
             ring = link.read(devblock.LOG + devblock.LOG_HEADER, size)
@@ -161,13 +165,13 @@ class Ts17(Target):
         return uuid
 
     @contextmanager
-    def mass_storage(self, seconds: int) -> Generator[Path]:
-        """Boots the dev build (config `image`) with USB on; holds the device
+    def mass_storage(self, seconds: int, image: Path | None = None) -> Generator[Path]:
+        """Boots IMAGE (default: config `image`) with USB on; holds the device
         lock throughout, as the card commands call this directly"""
         uuid = self._card_uuid()
         if card.find(uuid):
             raise Ts17Error("the card is on this PC already: unmount or unplug it first")
-        req = RunRequest(self.image(), seconds, usb=True)
+        req = RunRequest(image or self.image(), seconds, usb=True)
         with self.lock():
             self.before_run(req)
             self.launch(req)

@@ -14,10 +14,12 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from .errors import ArbError
+
 ROCKBOX_VID = "1209"
 
 
-class CardError(Exception):
+class CardError(ArbError):
     pass
 
 
