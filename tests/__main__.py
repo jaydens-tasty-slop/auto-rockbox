@@ -1,8 +1,8 @@
 """Runs every offline suite: python -m tests [suite ...]  (default: all of SUITES).
 
 A suite is a package under tests/; each test_* module's test functions (named
-test or test_*) run in turn.  A test raises tests.Skip when its inputs are absent.
-tests/host (unittest based, owned elsewhere) is not run here yet.
+test or test_*) run in turn, and its unittest TestCases if it has any.  A test
+raises tests.Skip (or unittest's skip) when its inputs are absent.
 """
 
 from __future__ import annotations
@@ -11,11 +11,12 @@ import importlib
 import pkgutil
 import sys
 import traceback
+import unittest
 from pathlib import Path
 
 from tests import Skip
 
-SUITES = ("ts17", "yp3", "fm")
+SUITES = ("ts17", "yp3", "fm", "host")
 
 
 def main(suites: list[str] | None = None) -> int:
@@ -41,6 +42,13 @@ def main(suites: list[str] | None = None) -> int:
                 else:
                     passed += 1
                     print(f"ok   {label}.{name}")
+            cases = unittest.defaultTestLoader.loadTestsFromModule(mod)
+            if cases.countTestCases():
+                r = unittest.TextTestRunner(stream=sys.stdout, verbosity=0).run(cases)
+                bad, skip = len(r.failures) + len(r.errors), len(r.skipped)
+                failed, skipped = failed + bad, skipped + skip
+                passed += r.testsRun - bad - skip
+                print(f"{'FAIL' if bad else 'ok  '} {label}: {r.testsRun} unittest cases")
     print(f"{passed} passed, {failed} failed, {skipped} skipped")
     return 1 if failed else 0
 

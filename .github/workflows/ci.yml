@@ -33,9 +33,8 @@ jobs:
 
       - run: uv run ty check
 
-      # Every offline suite (ts17, yp3, fm). Tests that need a Rockbox build,
+      # Every offline suite (ts17, yp3, fm, host). Tests that need a Rockbox build,
       # a port checkout, a toolchain or hardware report "skip" and do not fail.
-      # tests/host (unittest based, still being written) is not run yet.
       - run: uv run python -m tests
 
       - name: Build wheel and sdist

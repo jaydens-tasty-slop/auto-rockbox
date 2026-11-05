@@ -18,6 +18,10 @@ dependencies = [
 [project.optional-dependencies]
 # Bluetooth peers (virtual controllers, A2DP sink, HID device) for ports with a BT stack
 bt = ["bumble>=0.0.200"]
+# Graphs of the audio-quality analysis (arb audio)
+plots = [
+    "matplotlib>=3.11.2",
+]
 
 [project.scripts]
 arb = "auto_rockbox.cli:main"
