@@ -90,3 +90,23 @@ def radio(step: StepContext) -> Outcome:
 Scenarios for one player go in `targets/NAME/soak.py` or
 `targets/NAME/torture.py`. Scenarios that only need the `Target` API go in
 `suites/`.
+
+## Bluetooth peers
+
+`arb bt-peer` gives a port's own Bluetooth stack something to talk to
+(Bumble: `uv sync --extra bt`):
+
+- **`sink`** and **`hid`** run against the simulator. Bumble serves it a
+  virtual controller as H4 over TCP and plays an A2DP sink with AVRCP
+  controller, or a DualShock 4 or keyboard. `hid --sim DIR` starts the
+  simulator itself. Build it from the branch under test: a stale build
+  maps the pad keys differently. Its `simdisk/.rockbox/bluetooth.dat` keeps
+  pairings between runs, so clear it when another peer paired last.
+- **`pcsink`** and **`pcheadset`** use this PC's adapter against the
+  player: the PC as an A2DP sink, or as a headset paging the player cycle
+  after cycle. `arb yp3 bt-peer hid` is the HID device over the air.
+- Each run writes its btsnoop, keys and log to its output directory. When
+  a result differs from what you expect, diff two runs' HCI traffic
+  packet by packet before suspecting the peer. In this port, a sink
+  failure turned out to be a race inside the stack: it streams silence
+  until its mixer has PCM.
