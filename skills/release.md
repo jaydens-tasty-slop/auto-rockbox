@@ -143,6 +143,29 @@ Each Rockbox run must show all of these:
 - [ ] Every shipped theme and font renders on the device.
 - [ ] RTC and alarm (if shipped) survive a power-off.
 
+### Code quality
+
+- [ ] **A code quality audit** of all target code against the list below,
+      by a reviewer who did not write the code under review (a person, or a
+      fresh agent given the code and this list). Every finding is fixed, or
+      it gets a `TODO.md` entry saying why it waits.
+  - [ ] No magic numbers in drivers. Every address, mask, pad, IRQ number,
+        priority and clock rate is named and defined in its one home
+        ([bring-up.md](bring-up.md), "One home for every constant").
+  - [ ] Every pad has one owner, and only the pad routine writes pad
+        registers. IRQ priorities come from the one table.
+  - [ ] Every file of reverse-engineered definitions carries the "not from a
+        datasheet" warning. Every entry says how it is known. Each remaining
+        `GUESS` has been reviewed: it is still needed, nothing shipped
+        depends on it untested, and the guesses a user could notice are
+        listed in the known issues.
+  - [ ] No duplicated logic or definitions: the same register defined in
+        two files, or two copies of a routine.
+  - [ ] No dead code, no diagnostic scaffolding and no `TODO(cleanup)` on
+        a path the release build compiles.
+  - [ ] Shared Rockbox code changes only behind the target's own define.
+        The simulator and at least one other target still build unchanged.
+
 ### Build and legal
 
 - [ ] Built from a clean checkout of the tagged commit with the release
@@ -170,3 +193,11 @@ Each Rockbox run must show all of these:
 - Keep the release candidate's logs and the results file. The next release's
   "regression against the previous release" checks need them.
 - Track field reports in `TODO.md` with the release version in the entry.
+- Optional: **send the target upstream.** If the port's `Target` class and
+  commands live in the port's own tree (a workspace plugin), open a pull
+  request to [auto-rockbox](https://github.com/jaydens-tasty-slop/auto-rockbox)
+  that adds them as `targets/<player>/`. Include its offline tests, the
+  config keys in its class docstring, and a line in the README's target
+  list. Leave out personal bench values (card UUIDs, addresses, paths) and
+  anything derived from stock firmware. A released port's target has
+  survived a full release checklist, so other ports can start from it.

@@ -126,6 +126,78 @@ For each driver: collect the facts (registers, init tables, timings) into
 read the result off the log, Line In or the camera, never off a guess. Then
 soak it: [testing.md](testing.md).
 
+### One home for every constant, and guesses marked as guesses
+
+Magic numbers and definitions scattered across drivers caused several of the
+YP3's bugs:
+
+- The mic driver brought its own pad setup, copied from stock's generic mic
+  path, which muxed four pads to analog. On this board those pads were the
+  panel reset and the tuner's I2C, so starting the mic held the panel in
+  reset (a white screen until reboot).
+- The LCD, SD and backlight drivers each had a private copy of the pad
+  routine, and other drivers wrote pad registers directly. Nothing knew
+  which driver owned a pad.
+- One pad configuration word holds fields for several pads. A driver's
+  read-modify-write raced the key scan in the tick until all pad writes
+  went through one routine with IRQs off.
+- The FM capture DMA IRQ sat below the tick's priority, and the FM monitor
+  overran thousands of times an hour.
+- A tuner clock source written down as "32 kHz" read as a fact. It was a
+  guess, the clock was 32.000 kHz rather than 32.768, and every station came
+  out 2.34% low ([fm-radio.md](fm-radio.md)).
+- Shared registers (core select, GPIO base, USB IRQs) were defined again in
+  several drivers, and the copies could drift apart.
+
+The rules that came out of it:
+
+- **Name every number.** No bare addresses, bit masks, pad numbers, IRQ
+  numbers or priorities in driver code. A value used once still gets a name
+  and a comment saying what it is.
+- **One home for each kind of fact:**
+  - Registers that several drivers share go in the SoC header
+    (`firmware/export/<soc>.h`). Registers only one driver uses go at the
+    top of that driver.
+  - The **board pad map** gets one header that lists every pad the board
+    uses, with its function and its owning driver. One pad routine
+    configures pads and refuses a pad that another driver owns (logged in
+    dev builds). No driver writes pad registers itself.
+  - **IRQ numbers and priorities** go in one table, with the order stated
+    and explained (audio DMA above the tick, and so on).
+  - **Clocks**: derive every rate from one named, measured source rate.
+- **Write down your best guess for everything, and mark it as a guess.**
+  Without a datasheet, most names, pin roles, bit meanings and values start
+  as guesses. Write the guess anyway: a named guess
+  (`TUNER_REFCLK_32K`) can be found, checked and fixed, and a bare `1`
+  cannot. But a guess written down looks exactly like a fact, so:
+  - Put a warning at the top of every file of such definitions, saying
+    they do not come from a datasheet, that entries marked as guesses may
+    be wrong and misleading, and where the evidence is kept.
+  - Tag each entry with how it is known: measured, read from stock (with
+    the routine or address), or `GUESS` (with what it rests on).
+  - Give a register or bit whose role is unknown an honest name (by its
+    address, "role unknown"), not an invented one.
+  - When a guess is confirmed or disproved, change its tag in the same
+    commit. When a driver misbehaves, grep `GUESS` in everything it touches
+    before anything else.
+
+  For example:
+
+  ```c
+  /*
+   * Board pads. NOT FROM A DATASHEET: names and roles come from reverse
+   * engineering the stock firmware and from measurements on the board.
+   * Entries tagged GUESS are unverified and may be wrong or misleading.
+   * Evidence for each entry: docs/hardware.md, "Pads".
+   */
+  #define PAD_LCD_RESET    PAD(1, 10)  /* measured: low holds the panel blank */
+  #define PAD_TUNER_SDA    PAD(1, 13)  /* stock FM open routine */
+  #define PAD_AMP_ENABLE   PAD(0, 6)   /* GUESS: stock sets it before playback */
+  ```
+
+- Keep the evidence in `docs/hardware.md` and the tag in the code, so a
+  reader of the code sees how far to trust each line.
+
 ## Phase 4: make it a product
 
 Normal menus, file browser, settings, playback, a few games, a writable card,
