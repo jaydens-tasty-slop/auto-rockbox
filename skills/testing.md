@@ -19,7 +19,7 @@ once the dev shell works. A release needs both
 ## Running
 
 ```
-arb ts17 soak build/ts17/rockbox.elf build/soak-RUN --hours 8 --shots
+arb ts17 soak build/ts17/rockbox.elf build/soak-RUN --hours 8 --shots --set volume=-15
 arb yp3 torture build/yp3/rockbox.elf build/torture-RUN --until 07:00 --seed 3
 ```
 
@@ -29,6 +29,10 @@ arb yp3 torture build/yp3/rockbox.elf build/torture-RUN --until 07:00 --seed 3
 - Start `arb linein serve` (and `arb webcam serve` for `--shots`) first.
   Keep Line In at unity gain, and check what is on the card before blaming
   the player (some test files step down 12 dB at 10 s by design).
+- **Pin the volume** with `--set volume=DB` (every boot sets it). Random
+  keys in a browse step can open the WPS, where Up and Down change the
+  volume. The setting persists, so later steps play quieter until quiet
+  test clips sink into Line In's noise floor.
 - `--only a,b` and `--weights a=5,b=0` focus a run on one area, for
   example to check a fix. `--seed` repeats a sequence.
 - Watch the run log for `FAIL`, `LOST` and tracebacks. Don't poll it.
