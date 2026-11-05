@@ -99,7 +99,8 @@ def command(name: str | None = None, *, help: str, args: Iterable[Arg] = (),
     def register(fn: CommandFn) -> CommandFn:
         host = target is False
         targets = None if isinstance(target, bool) else frozenset(target)
-        _commands.append(Command(name or fn.__name__.replace("_", "-"), fn, help, list(args),
+        default = getattr(fn, "__name__", "").removesuffix("_cmd").replace("_", "-")
+        _commands.append(Command(name or default, fn, help, list(args),
                                  targets, host, frozenset(needs), (fn.__doc__ or "").strip()))
         return fn
     return register

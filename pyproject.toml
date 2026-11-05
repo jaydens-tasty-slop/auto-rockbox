@@ -24,8 +24,8 @@ arb = "auto_rockbox.cli:main"
 
 [dependency-groups]
 dev = [
-    "mypy>=1.13",
     "ruff>=0.8",
+    "ty>=0.0.1a1",
     "types-pyserial>=3.5",
 ]
 
@@ -44,12 +44,9 @@ ignore = [
     "PLR2004",                                   # register values and protocol constants
 ]
 
-[tool.mypy]
-strict = true
-python_version = "3.12"
-packages = ["auto_rockbox"]
-mypy_path = "src"
+[tool.ty.environment]
+python-version = "3.12"
 
-[[tool.mypy.overrides]]
-module = ["usb.*", "bumble.*"]
-ignore_missing_imports = true
+[tool.ty.rules]
+# every diagnostic is an error: the tree stays clean
+possibly-unresolved-reference = "error"
