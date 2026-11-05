@@ -33,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .errors import ArbError
 from .linein import dominant_hz, tone_kind
 
 CLIP_S = 12
@@ -233,3 +234,18 @@ def make(out: Path, tone: Path, *, extra: Path | None = None, mod: Path | None =
                 "files": [asdict(e) for e in entries]}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
     return entries
+
+
+class MediaError(ArbError):
+    pass
+
+
+def load(out: Path) -> list[Entry]:
+    """The entries of the manifest that `make` wrote into OUT"""
+    f = out / "manifest.json"
+    try:
+        data = json.loads(f.read_text())
+    except FileNotFoundError:
+        raise MediaError(f"no {f}: make the set with `arb media {out}` and copy it to the "
+                         "card") from None
+    return [Entry(**e) for e in data["files"]]

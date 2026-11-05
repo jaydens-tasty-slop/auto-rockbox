@@ -71,7 +71,7 @@ def boot(step: StepContext, seconds: int, keys: str = "", *, settings: dict[str,
     if r.returned and t.return_line and t.return_line not in r.log:
         probs.append("early return (hang, reset or power-off)")
     probs += [ln.strip() for ln in r.log.splitlines()
-              if s.faults.search(ln) and not ln.startswith("keys: done")]
+              if s.faults.search(ln) and not ln.startswith(("keys: done", "track: "))]
     probs += [f"missing: {e}" for e in expect if e not in r.log]
     out = Outcome(probs, output=r.log, lost=not r.returned, sheet=r.sheet)
     return Boot(out, t0, t1, r.log)

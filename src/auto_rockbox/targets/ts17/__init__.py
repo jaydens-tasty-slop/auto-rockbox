@@ -25,13 +25,13 @@ from ...elf import Elf
 from ...registry import register_target
 from ...target import Battery, Lcd, RunRequest, Target
 from ...workspace import ConfigError, Workspace
-from . import adfu, commands, devblock, gadget, nor, power, rdm
+from . import adfu, commands, devblock, gadget, nor, power, rdm, soak
 from .adfu import Ts17Error
 
 if TYPE_CHECKING:
     from PIL.Image import Image
 
-__all__ = ["Ts17", "Ts17Error", "commands"]
+__all__ = ["Ts17", "Ts17Error", "commands", "soak"]
 
 FB_SYMBOL = "lcd_static_framebuffer"    # Rockbox's framebuffer, in SRAM at the gadget's output
 FB_KEEP = 0x100                 # the gadget's status block and a few results: what the
