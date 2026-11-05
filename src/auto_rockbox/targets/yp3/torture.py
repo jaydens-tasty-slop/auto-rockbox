@@ -24,7 +24,7 @@ before the next step.
 The bt-* scenarios make this PC the player's headset, through BlueZ, with
 the player's stream on a null sink for the whole run (never the speakers).
 They are in a run only with the player's address configured, and need it
-paired with this PC (bt_pcsink.py) and a Bluetooth build:
+paired with this PC (`arb bt-peer pcsink`) and a Bluetooth build:
 
     [bluetooth]
     player = "AA:BB:CC:DD:EE:FF"    # the player's BD_ADDR
@@ -32,9 +32,9 @@ paired with this PC (bt_pcsink.py) and a Bluetooth build:
 
 `bt-pcpower` (this PC's adapter off and on: it once wedged until bluetoothd
 restarted) is off unless --weights gives it a weight. The cases that need a
-peer of their own (yp3dev's bt_pcheadset.py headset, bt_hidpeer.py HID
-device, bt_peer.py stream capture, bt_pcsink.py's pairing agent for
-forget-and-pair) are not ported yet.
+peer of their own (the headset, HID device, stream capture and pairing
+agent for forget-and-pair of `arb bt-peer`, auto_rockbox.btpeer) are not
+ported yet.
 """
 
 from __future__ import annotations
@@ -992,7 +992,7 @@ class Yp3Torture(TortureSuite):
                   f"{s.status}, player linked to {s.addr or 'nothing'}, paired {paired}, PC sees "
                   f"{'connected' if pc.connected() else 'no link'}")
         if not paired:
-            self.bt_off = "the player no longer knows this PC: pair them again (bt_pcsink.py)"
+            self.bt_off = "the player no longer knows this PC: pair them again (arb bt-peer pcsink)"
         return False
 
     def bt_toggle(self) -> bool:

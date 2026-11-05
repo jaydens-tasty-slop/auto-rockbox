@@ -56,7 +56,7 @@ def gaplog(ctx: Context, args: Namespace) -> int:
 
 def gaps_cmd(ctx: Context, args: Namespace) -> int:
     """The exact-zero runs in a 16-bit recording of the player's stream
-    (e.g. bt_pcsink's stream.wav). START is the time of its first sample:
+    (e.g. `arb bt-peer pcsink`'s stream.wav). START is the time of its first sample:
     `stat -c %w FILE` gives the file's birth, which is close."""
     start = _when(args.start, date.today())
     with ExitStack() as stack:
