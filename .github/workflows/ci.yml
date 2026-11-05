@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      # The YP3 payload test builds the ROM-USB payload with LLVM.
+      - name: Install LLVM
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang lld llvm
+
+      - run: uv sync --locked
+
+      - run: uv run ruff check src tests
+
+      - run: uv run ty check
+
+      # Every offline suite (ts17, yp3, fm). Tests that need a Rockbox build,
+      # a port checkout, a toolchain or hardware report "skip" and do not fail.
+      # tests/host (unittest based, still being written) is not run yet.
+      - run: uv run python -m tests
+
+      - name: Build wheel and sdist
+        run: |
+          uv build
+          unzip -l dist/*.whl | tee wheel.lst
+          grep -q 'targets/yp3/payload/' wheel.lst
+          grep -q 'targets/ts17/gadgets/' wheel.lst

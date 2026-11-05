@@ -2,7 +2,7 @@
 the port's checkout has them (auto-rockbox inside rockbox-yp3), else alone.
 No device is touched.
 
-    .venv/bin/python -m tests.yp3.test_yp3        (or pytest, if installed)
+    .venv/bin/python -m tests.yp3.test_yp3        (or python -m tests yp3)
 """
 
 from __future__ import annotations
@@ -25,11 +25,14 @@ from auto_rockbox.run import run
 from auto_rockbox.shell import Reply
 from auto_rockbox.targets.yp3 import Yp3, Yp3Run, image, power, prof, retained, rom, shot
 from auto_rockbox.workspace import Workspace
+from tests import Skip
 
 PORT = Path(__file__).resolve().parents[3]          # rockbox-yp3, if auto-rockbox sits in it
 YP3DEV = PORT / "yp3dev"
 ELF = PORT / "build/yp3/rockbox.elf"
 TOOLCHAIN = PORT / "toolchain/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-"
+
+NO_PORT = "no rockbox-yp3 checkout (build/yp3/rockbox.elf, toolchain) around this repo"
 
 
 def _yp3dev() -> Any:
@@ -91,7 +94,7 @@ def test_dev_config_and_bundle() -> None:
 
 def test_place_elf_matches_package_py() -> None:
     if not have_port():
-        return
+        raise Skip(NO_PORT)
     base = random.Random(1).randbytes(rom.IMAGE_SIZE)
     with tempfile.TemporaryDirectory() as tmp:
         bp, out = Path(tmp) / "base.bin", Path(tmp) / "out.bin"
@@ -108,7 +111,7 @@ def test_dev_image_matches_image_for() -> None:
     """yp3.py's image_for packages against <port>/build/base.bin; so does this"""
     base_path = PORT / "build/base.bin"
     if not have_port() or not base_path.exists():
-        return
+        raise Skip(f"no port checkout, or no {base_path}")
     yp3 = _yp3dev()
     with tempfile.TemporaryDirectory() as tmp:
         t = Path(tmp)
@@ -222,7 +225,7 @@ def test_run_flow() -> None:
     """auto_rockbox.run.run through Yp3 on the simulated player: charger guard,
     image with the run config and a push, boot, return, log, charger off"""
     if not have_port():
-        return
+        raise Skip(NO_PORT)
     import auto_rockbox.targets.yp3 as pkg  # noqa: PLC0415
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -306,7 +309,7 @@ def _fault(pc: int, lr: int, good_crc: bool = True) -> bytes:
 
 def test_retained_against_yp3_py() -> None:
     if not have_port():
-        return
+        raise Skip(NO_PORT)
     yp3 = _yp3dev()
     elf = Elf(ELF)
     funcs = functions_at(40)
@@ -390,7 +393,7 @@ def test_shot_refetches_lost_rows() -> None:
 
 def test_profile_matches_profile_py() -> None:
     if not have_port():
-        return
+        raise Skip(NO_PORT)
     funcs = prof.functions(Elf(ELF))
     pcs = functions_at(40)
     dump = "\n".join(" ".join(f"{p + 2 * (i % 3):x}" for i, p in enumerate(pcs[k:k + 10]))
@@ -408,8 +411,8 @@ def test_profile_matches_profile_py() -> None:
 # Payload and command line
 
 def test_payload_builds() -> None:
-    if not shutil.which("clang"):
-        return
+    if not all(shutil.which(t) for t in ("clang", "ld.lld", "llvm-objcopy")):
+        raise Skip("no clang, ld.lld and llvm-objcopy on PATH")
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
         binary = rom.build_payload(out)
@@ -437,7 +440,6 @@ def test_commands() -> None:
 
 
 if __name__ == "__main__":
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
-            fn()
-            print(f"ok {name}")
+    from tests.__main__ import main
+
+    sys.exit(main(["yp3"]))
