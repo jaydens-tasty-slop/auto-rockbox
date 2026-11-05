@@ -18,7 +18,7 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from ... import card, fb
 from ...elf import Elf, Symbolizer
@@ -70,6 +70,8 @@ class Ts17(Target):
     capabilities = frozenset({"framebuffer", "battery", "cold", "usb", "storage"})
     return_line = devblock.RETURN_LINE
     log_faults = r"lcd: frame timed out|xip codec: bad header"
+    # the soak's checks are wired (Line In), and a paired PC would take the stream
+    soak_settings: ClassVar[dict[str, str]] = {"bluetooth": "off"}
 
     def __init__(self, ws: Workspace) -> None:
         super().__init__(ws)

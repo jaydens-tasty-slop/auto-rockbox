@@ -90,6 +90,8 @@ class Target(ABC):
     # Log lines of this player's drivers that mean a failure, on top of
     # Rockbox's own (a regex)
     log_faults: ClassVar[str] = ""
+    # Run settings every soak boot gets unless --set or the step says otherwise
+    soak_settings: ClassVar[dict[str, str]] = {}
 
     def __init__(self, ws: Workspace) -> None:
         self.ws = ws

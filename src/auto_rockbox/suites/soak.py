@@ -39,7 +39,8 @@ class SoakSuite(Suite):
         super().__init__(target)
         self.image = image
         self.shots = shots
-        self.settings = settings or {}  # every boot's, under the step's own
+        # every boot's, under the step's own
+        self.settings = {**target.soak_settings, **(settings or {})}
         extra = target.log_faults
         self.faults = re.compile(FAULTS + (f"|{extra}" if extra else ""), re.I)
 

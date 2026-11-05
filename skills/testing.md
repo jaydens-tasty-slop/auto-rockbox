@@ -33,6 +33,11 @@ arb yp3 torture build/yp3/rockbox.elf build/torture-RUN --until 07:00 --seed 3
   keys in a browse step can open the WPS, where Up and Down change the
   volume. The setting persists, so later steps play quieter until quiet
   test clips sink into Line In's noise floor.
+- **Keep Bluetooth off** for wired checks. A player with Bluetooth on
+  auto-connects at boot to the last device it paired with. If that device
+  is this PC, the test audio goes to the PC's speakers or headphones
+  instead of Line In. The TS17 soak boots with `bluetooth=off` unless
+  `--set bluetooth=card` says otherwise (`Target.soak_settings`).
 - `--only a,b` and `--weights a=5,b=0` focus a run on one area, for
   example to check a fix. `--seed` repeats a sequence.
 - Watch the run log for `FAIL`, `LOST` and tracebacks. Don't poll it.

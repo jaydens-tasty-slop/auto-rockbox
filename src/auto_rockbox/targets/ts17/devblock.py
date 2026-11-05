@@ -24,6 +24,7 @@ KEYS_MAX = 0xF0                 # keys[]: a script of up to 239 bytes and its NU
 FLAG_USB = 1 << 0               # let Rockbox start its USB stack (dev builds keep it off)
 FLAG_TRACE = 1 << 1             # log a thread dump before the return
 FLAG_VOLUME = 1 << 2            # set the volume (the config's fourth word, dB) at boot
+FLAG_BT_OFF = 1 << 3            # Bluetooth off at boot, whatever the settings say
 VOLUME_DB = (-72, 0)            # the setting's range (lark_codec.h)
 LOG = DEV_BLOCK + 0x100
 LOG_MAGIC = 0x474C5354          # "TSLG"
@@ -37,7 +38,8 @@ DEFAULT_RETURN_S = 90           # the image's return time when it finds no confi
 RETURN_LINE = "returning to download mode at tick"
 
 SETTINGS = ("trace=0|1 (a thread dump before the return), volume=DB (-72..0, set once the "
-            "settings are loaded and kept)")
+            "settings are loaded and kept), bluetooth=off|card (off for this boot, or as the "
+            "card's settings say)")
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,10 @@ def run_options(settings: Mapping[str, str], usb: bool) -> RunOptions:
             if not v.lstrip("-").isdigit() or not lo <= int(v) <= hi:
                 raise Ts17Error(f"--set volume={v}: whole dB, {lo}..{hi}")
             flags, volume = flags | FLAG_VOLUME, int(v)
+        elif k == "bluetooth":
+            if v not in ("off", "card"):
+                raise Ts17Error(f"--set bluetooth={v}: off or card")
+            flags |= FLAG_BT_OFF if v == "off" else 0
         else:
             raise Ts17Error(f"--set {k}: ts17 has no such run setting; it takes {SETTINGS}")
     return RunOptions(flags, volume)

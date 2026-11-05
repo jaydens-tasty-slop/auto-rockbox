@@ -5,7 +5,13 @@ from __future__ import annotations
 import struct
 
 from auto_rockbox.targets.ts17 import Ts17Error, devblock
-from auto_rockbox.targets.ts17.devblock import FLAG_TRACE, FLAG_USB, FLAG_VOLUME, RunOptions
+from auto_rockbox.targets.ts17.devblock import (
+    FLAG_BT_OFF,
+    FLAG_TRACE,
+    FLAG_USB,
+    FLAG_VOLUME,
+    RunOptions,
+)
 
 
 def _raises(fn: object, *args: object, match: str = "") -> None:
@@ -44,6 +50,9 @@ def test_run_options() -> None:
     assert devblock.run_options({"trace": "1"}, usb=False) == RunOptions(FLAG_TRACE)
     assert devblock.run_options({"trace": "0"}, usb=True) == RunOptions(FLAG_USB)
     assert devblock.run_options({"volume": "-30"}, usb=False) == RunOptions(FLAG_VOLUME, -30)
+    assert devblock.run_options({"bluetooth": "off"}, usb=False) == RunOptions(FLAG_BT_OFF)
+    assert devblock.run_options({"bluetooth": "card"}, usb=False) == RunOptions()
+    _raises(devblock.run_options, {"bluetooth": "on"}, False, match="off or card")
     _raises(devblock.run_options, {"play": "/a.mp3"}, False, match="trace=0|1")
     _raises(devblock.run_options, {"trace": "yes"}, False, match="0 or 1")
     for bad in ("-73", "1", "-3.5", "loud"):

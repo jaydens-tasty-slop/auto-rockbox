@@ -424,4 +424,5 @@ def test_simulated_run() -> None:
         alarms = sum(x.name in ("alarm", "poweroff") for x in steps)
         assert len(t.requests) == n + alarms     # an alarm step boots once more to read it
         assert any(r.cold for r in t.requests) == any(x.name == "boot" for x in steps)
-        assert all(r.settings["volume"] == "-25" for r in t.requests)   # every boot's
+        # every boot's, and the target's soak default
+        assert all(r.settings == {"volume": "-25", "bluetooth": "off"} for r in t.requests)
