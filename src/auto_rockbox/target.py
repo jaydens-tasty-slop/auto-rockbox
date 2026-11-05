@@ -24,12 +24,14 @@ to targets that declare it:
     battery      battery() reads the cell and guards the charger
     cold         RunRequest.cold boots through the normal boot chain
     usb          RunRequest.usb lets Rockbox start its USB stack
+    storage      mass_storage() puts the player's card on this PC
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -125,3 +127,9 @@ class Target(ABC):
 
     def battery(self) -> Battery:
         raise Unsupported(f"{self.name}: no battery read")
+
+    # Boots a build as USB mass storage for up to SECONDS and yields the
+    # card's block device once this PC sees it; on exit waits for the player
+    # to return (auto_rockbox.card mounts and checks the device)
+    def mass_storage(self, seconds: int) -> AbstractContextManager[Path]:
+        raise Unsupported(f"{self.name}: no USB mass storage")
