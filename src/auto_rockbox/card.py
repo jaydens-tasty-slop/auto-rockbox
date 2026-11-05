@@ -95,14 +95,23 @@ def unmount(dev: Path, tries: int = 10) -> None:
         time.sleep(5)
 
 
-def check(dev: Path) -> str:
-    """udisks' filesystem check (fsck) of the unmounted card: its reply"""
+def check(dev: Path) -> bool:
+    """udisks' filesystem check (a read-only fsck) of the unmounted card: True
+    if clean. udisks gives no details; `fsck.fat -n` on the device (as root)
+    does."""
     obj = "/org/freedesktop/UDisks2/block_devices/" + dev.name
     r = subprocess.run(["gdbus", "call", "--timeout", "900", "--system", "--dest",
                         "org.freedesktop.UDisks2", "--object-path", obj, "--method",
                         "org.freedesktop.UDisks2.Filesystem.Check", "{}"],
                        capture_output=True, text=True, check=False)
-    return (r.stdout or r.stderr).strip()
+    reply = r.stdout.strip()
+    if reply not in ("(true,)", "(false,)"):
+        raise CardError(f"fsck {dev}: {(r.stderr or reply).strip()}")
+    return reply == "(true,)"
+
+
+def describe_check(clean: bool) -> str:
+    return "fsck: clean" if clean else "fsck: ERRORS (udisks' check failed)"
 
 
 @contextmanager
