@@ -1,4 +1,4 @@
-"""The YP3's torture run: its dev shell's commands and replies (apps/yp3_dev.c),
+"""The YP3's torture run: its dev shell's commands and replies (apps/dev_shell.c),
 the health line's YP3 fields, what every step is checked for, and the
 scenarios (auto_rockbox.suites.torture runs them).
 
@@ -128,7 +128,7 @@ LCD_GATE_ACK = 0x40080068       # clock gate 0x5c (LCD controller): bit 28
 FM_KHZ = (98100, 101500, 104300, 92500, 88700)
 VOLUME_DB = -20
 CHARGE_LIMIT = 80               # % (t_limit.cfg)
-SHELL_LINE = 127                # apps/yp3_dev.c sh_rx[128]: longer lines are cut
+SHELL_LINE = 127                # apps/dev_shell.c sh_rx[128]: longer lines are cut
 
 # A message (splash, prompt) that reports a failure; and those a scenario
 # provokes on purpose

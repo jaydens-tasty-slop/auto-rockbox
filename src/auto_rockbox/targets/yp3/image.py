@@ -12,7 +12,7 @@ updated and the partition table never needs a rewrite.
 
 A YP3_DEV build reads its run config (one sector of `key=value` lines) and
 the sdpush bundle (files it copies to the card when they differ) through XIP
-(apps/yp3_dev.c, dev-yp3.h).
+(apps/dev_shell.c, dev-yp3.c).
 """
 
 from __future__ import annotations

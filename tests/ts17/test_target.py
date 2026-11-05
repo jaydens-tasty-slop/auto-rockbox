@@ -23,17 +23,16 @@ def test_registered_with_commands() -> None:
     assert registry.targets()["ts17"] is Ts17
     cmds = registry.commands_for(Ts17)
     for name in ("run", "log", "fb", "keys", "battery", "card-push", "nor dump", "reboot", "mem",
-                 "stock-adfu"):
+                 "stock-adfu", "sh"):
         assert name in cmds, name
-    assert "sh" not in cmds                 # no dev shell on this player
     assert cmds["nor dump"].targets == frozenset({"ts17"})
 
 
 def test_key_scripts() -> None:
     t = Ts17(Workspace(Path("/nonexistent")))
-    for ok in ("9000 D D S 1500 P++", "7000,S,1500,UL", "V v Vv P+++", "D" * 239, ""):
+    for ok in ("9000 D D S 1500 P++", "7000,S,1500,UL", "V v Vv P+++ D* S~", "D" * 255, ""):
         t.check_keys(ok)
-    for bad in ("X", "D*", "S~", "d", "D+x", "D" * 240):
+    for bad in ("X", "D*+", "S~~", "d", "D+x", "D" * 256):
         try:
             t.check_keys(bad)
         except KeyScriptError:
@@ -75,8 +74,9 @@ class _Link:
     """adfu.Adfu over a dev block: the log ring and the last tick's record"""
 
     def __init__(self, log: bytes, crumb: bytes) -> None:
-        self.mem = {devblock.LOG: struct.pack("<III", devblock.LOG_MAGIC, len(log), 64),
-                    devblock.LOG + devblock.LOG_HEADER: log.ljust(64, b"\0"),
+        size = devblock.RING_BYTES
+        self.mem = {devblock.LOG: struct.pack("<III", devblock.LOG_MAGIC, len(log), size),
+                    devblock.LOG + devblock.LOG_HEADER: log.ljust(size, b"\0"),
                     devblock.CRUMB: crumb}
 
     def __enter__(self) -> _Link:

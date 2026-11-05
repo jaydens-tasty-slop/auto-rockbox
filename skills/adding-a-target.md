@@ -1,77 +1,75 @@
 # Adding a player to auto-rockbox
 
 A player is two halves that agree on a few memory layouts: the **device
-side** in the port's dev build (Rockbox code behind the port's `*_DEV`
-define), and the **host side**, a `Target` subclass in Python. The generic
-commands (`run`, `log`, `fb`, `keys`, `sh`, `battery`, the card commands,
-soak, torture) then work for the new player unchanged.
+side** in the port's dev build, and the **host side**, a `Target` subclass
+in Python. The generic commands (`run`, `log`, `fb`, `keys`, `sh`,
+`battery`, the card commands, soak, torture) then work for the new player
+unchanged.
 
 Start from the player that is closest to yours: `targets/ts17` loads over a
 boot ROM download protocol into RAM and NOR, and `targets/yp3` flashes
-through a ROM USB payload and has the serial dev shell.
+through a ROM USB payload.
 
 ## Device side: the dev build contract
 
-Put all of it behind one define (`YP3_DEV`, `TS17_DEV`) so the release build
-does not change at all.
+Most of it is shared Rockbox code, the same on every player: the log ring,
+key scripts, thread traces and the serial mirror (`firmware/export/devlog.h`,
+`firmware/devlog.c`), and the boot tasks and dev shell
+(`apps/dev_shell.c`). A port's dev build defines `HAVE_DEVLOG` in its config
+header behind its own switch (`YP3_DEV`, `TS17_DEV`), so the release build
+does not change at all, and supplies a small `dev-<player>.c`:
 
-**Run config.** The host writes it where the image finds it at boot, and the
-image consumes it once (clearing the magic), so a later normal boot ignores
-it. It holds at least:
+**Run config.** `key=value` lines that the host writes where the image finds
+them at boot; the image takes them once (clearing the magic), so a later
+normal boot ignores them. `dev_config(key, buf, size)` answers from them
+(`devlog_config_find()` parses the text). The shared keys are `return`
+(seconds, 0 = never), `keys` (up to 255 bytes), `usb=1|storage`, `play`,
+`volume`, `bluetooth=off`, `ls`, `monitor`, `poweroff`, `crash`, `sdlog`;
+a port may add its own. Pick a place that survives what the host does before
+the boot: the TS17 uses a RAM block that a reset into download mode leaves
+alone, the YP3 a flash sector read through XIP. Without a host config,
+return after a default time (90 s on the TS17), so a dev build can never
+strand the player.
 
-- the return time in seconds (0 = never),
-- a key script (up to 239 bytes),
-- flags or `key=value` settings: start the USB stack, dump threads before
-  returning, play a file, and so on.
-
-Pick a place that survives what the host does before the boot. The TS17
-uses a RAM block that a reset into download mode leaves alone: a binary
-struct with magic "TSDC". The YP3 uses a flash sector holding `key=value`
-text, read through XIP. Without a host config, return after a default time
-(90 s on the TS17), so a dev build can never strand the player.
-
-**Log ring.** `kind: text` lines into a byte ring in RAM that survives the
-return: a header with a magic, the total bytes ever written and the ring
-size, then the ring. The host reads it after the return and unwraps it.
-Keep it alive across reboots that had no host config (a crash reboot then
-still shows what happened), and reset it when a new host config arrives.
-Useful extras: the last interrupted PCs from the tick (shows where a hang
-spun), a thread snapshot, and a fault record with a CRC and a commit word
-written last.
+**Log ring.** Place a header (magic, total bytes ever written, ring size)
+and the ring in RAM that survives the return, and hand them to
+`devlog_init()`. Keep them across reboots that had no host config (a crash
+reboot then still shows what happened), and reset them when a new host
+config arrives. Useful extras: the PC the last tick interrupted (shows where
+a hang spun; `dev_trace_copy()`), and a fault record.
 
 **Return to the host.** After the return time, go back to the mode the host
 loads from: a reboot into download mode (TS17), or stopping the watchdog
 feeds so the recovery watchdog resets into ROM USB (YP3). Log the line the
 host looks for (`returning to download mode at tick N`), so an early return
-reads as a hang.
+reads as a hang. `dev_return()` does it at once (shell `rom`, `!rom`).
 
-**Key script.** Tokens separated by spaces or commas:
+**Hooks.** `dev_feed()` (the recovery watchdog through long boot work),
+`dev_code_address()` (for return-address scans), `dev_usec()`,
+`dev_target_boot()` (the port's own boot tasks) and `dev_target_cmd()` (its
+own shell commands, after the shared ones; NULL for none).
 
-- a number waits that many milliseconds;
-- a run of letters presses those keys together, for a short tap;
-- a suffix changes the press (`+` holds 1 s, `++` 2 s; the YP3 also has `*`
-  for a real long press and `~` for a real short tap).
+**Keys.** The button driver ORs `dev_held_buttons` into what it reads, so
+a key script takes the same path as a finger. The grammar is shared
+(`auto_rockbox.keys`): U D L R S, V v and P where the player has volume and
+power keys; `+` `*` `~` suffixes. List the letters in the Target's
+`key_letters`, so the host rejects typos before a flash.
 
-Inject at the button driver's level (OR the scripted state into what the
-driver reads), so the script exercises the same path as a finger. Log
-`keys: done` at the end, and `keys: bad token at '...'` and stop on a bad
-token. List your letters and suffixes in the Target's `key_letters` and
-`key_suffixes`, so the host rejects typos before a flash.
+**USB.** `usb_detect()` reports no cable until the run config asks for USB
+(`dev_usb_enabled`). The dev build defines `USB_ENABLE_SERIAL`,
+`USB_SERIAL_RX_HOOK dev_serial_rx`, and `USB_SERIAL_RX_WHOLE_PACKET` where the
+USB driver drops an OUT packet longer than the request, and gives the
+device its own USB IDs, so the host finds the shell's tty by them.
 
 **Framebuffer.** Nothing to do if the host can read RAM after the return:
 it finds the framebuffer through the ELF's symbol. Otherwise add a shell
 `shot` command.
 
-**Dev shell** (once USB works): Rockbox's USB serial (CDC-ACM) in
-charge-only mode. One command per line; the reply is the log lines the
-command writes (mirrored live to the serial port), ended by a line `ok`, or
-by `err <command>` on failure. The host's `auto_rockbox.shell.Shell` speaks
-this. Send nothing until the host has written since the last bus reset (a
-tty in cooked mode would echo the output back as input). Handle `!rom`
-(return now) in the receive hook, so it works while a command blocks. The
-torture suite needs `health`, `msgs`, `status`, `keys`, `play`, `stop`,
-`vol`, `log`, `ls`, `cfg`, `run`, `bat` and `!rom`; see the YP3's
-`apps/yp3_dev.c` for their reply formats.
+**Dev shell** (shared, once the port's USB works): Rockbox's USB serial
+(CDC-ACM) in charge-only mode. One command per line; the reply is the log
+lines the command writes, ended by a line `ok`, or by `err <command>`. The
+host's `auto_rockbox.shell.Shell` speaks this; `help` lists the commands,
+and `apps/dev_shell.c` has their reply formats.
 
 **Recovery watchdog.** One switch (`*_RECOVERY_WATCHDOG`), on during
 bring-up. The firmware arms it at its earliest entry, with the reason that
@@ -95,11 +93,13 @@ class MyPlayer(Target):
     summary = "XYZ123, 4 MiB NOR, ROM download mode"
     lcd = Lcd(128, 160)
     key_letters = "UDLRSP"
-    capabilities = frozenset({"framebuffer", "battery", "usb", "storage"})
+    capabilities = frozenset({"framebuffer", "shell", "battery", "usb", "storage"})
 
-    def launch(self, req: RunRequest) -> None: ...      # image + run config, start it
+    def launch(self, req: RunRequest) -> None: ...      # image + self.run_config(req), start it
     def wait_return(self, deadline, tick) -> bool: ...  # back in download mode?
     def read_log(self) -> str: ...                      # the unwrapped ring
+    def shell(self) -> Shell:                           # the dev shell's tty, by USB IDs
+        return Shell(self.name, "1209", "0003")
 ```
 
 Put it in `src/auto_rockbox/targets/<name>/`, which is imported
@@ -110,8 +110,8 @@ the workspace's `[plugins] modules`.
 - **Capabilities** switch generic commands on: `framebuffer`
   (`read_framebuffer`), `shell` (`shell()`), `battery` (`battery()` plus a
   charger guard in `before_run`/`after_run`), `cold` (boots through the
-  normal boot chain), `usb` (lets Rockbox start USB), and `storage`
-  (`mass_storage()` yields the card's block device).
+  normal boot chain), `usb` (`RunRequest.usb` starts the dev shell), and
+  `storage` (`mass_storage()` yields the card's block device).
 - **Player-only commands**: `@command("nor", help=..., target={"myplayer"})`
   in the subpackage's `commands.py`. A player command of the same name as a
   generic one replaces it for that player (the YP3's `run` adds `--push` and

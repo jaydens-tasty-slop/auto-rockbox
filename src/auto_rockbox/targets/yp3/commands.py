@@ -43,7 +43,7 @@ def _pushes(t: Yp3, args: Namespace, elf: Path) -> list[tuple[Path, str]]:
 
 IMAGE_ARGS = [
     arg("--set", dest="settings", action="append", default=[], metavar="KEY=VALUE",
-        help="a dev config line (apps/yp3_dev.c: ls= play= volume= monitor= crash= usb= "
+        help="a dev config line (apps/dev_shell.c: ls= play= volume= monitor= crash= usb= "
              "speaker= poweroff= prof= ...)"),
     arg("--push", action="append", default=[], metavar="LOCAL=/CARD/PATH",
         help="copy LOCAL to the card at boot when it differs (652 KiB in all)"),

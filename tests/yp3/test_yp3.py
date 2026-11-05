@@ -23,6 +23,7 @@ from auto_rockbox import registry
 from auto_rockbox.elf import Elf, Symbolizer
 from auto_rockbox.run import run
 from auto_rockbox.shell import Reply
+from auto_rockbox.target import RunConfigError
 from auto_rockbox.targets.yp3 import Yp3, Yp3Run, image, power, prof, retained, rom, shot
 from auto_rockbox.workspace import Workspace
 from tests import Skip
@@ -150,7 +151,7 @@ def test_run_config() -> None:
     assert Yp3.run_config(Yp3Run(Path("x.elf"), 0, usb=True)) == {"return": "0", "usb": "1"}
     try:
         Yp3.run_config(Yp3Run(Path("x.elf"), 40, settings={"return": "9"}))
-    except image.ImageError:
+    except RunConfigError:
         pass
     else:
         raise AssertionError("--set return= passed")

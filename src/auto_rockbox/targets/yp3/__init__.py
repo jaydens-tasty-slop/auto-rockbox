@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
 
-from ... import card, keys
+from ... import card
 from ...elf import Symbolizer
 from ...registry import register_target
 from ...shell import Shell, find_tty
@@ -94,8 +94,6 @@ class Yp3(Target):
     summary = "SL6801, 2 MiB NOR (XIP), 128x160 LCD; flashed from boot ROM USB 301a:2800"
     lcd = Lcd(128, 160, "rgb565-swapped")
     key_letters = "UDLRS"
-    key_suffixes = "+*~"        # + held 1 s, * held 1.2 s as a real key, ~ a real short tap
-    keys_max = 255              # apps/yp3_dev.c keys_script[256]
     capabilities = frozenset({"shell", "battery", "usb", "storage"})
 
     def __init__(self, ws: Workspace) -> None:
@@ -199,19 +197,6 @@ class Yp3(Target):
         pushes = [parse_push(s) for s in specs]
         return [(build / local, sd) for local, sd in pushes if (build / local).exists()]
 
-    @staticmethod
-    def run_config(req: RunRequest) -> dict[str, str]:
-        """The dev config lines for REQ; an explicit usb= setting beats --usb"""
-        if clash := {"return", "keys"} & req.settings.keys():
-            raise ImageError(f"--set {'/'.join(sorted(clash))}: the return time is the run's "
-                             "SECONDS and the key script its --keys")
-        cfg = {"return": str(req.seconds)}
-        if req.keys:
-            cfg["keys"] = req.keys
-        if req.usb:
-            cfg["usb"] = "1"
-        return cfg | req.settings
-
     # The Target API
 
     def launch(self, req: RunRequest) -> None:
@@ -244,12 +229,6 @@ class Yp3(Target):
 
     def battery(self) -> Battery:
         return self._guard(stop=False)
-
-    def key_duration_ms(self, script: str) -> int:
-        """apps/yp3_dev.c holds a key 1 s for any number of +, 1.2 s for *"""
-        hold = {"+": 1000, "*": 1200}
-        return sum(int(t) if t.isdigit() else keys.TAP_MS + hold.get(t[-1], 0)
-                   for t in keys.tokens(script))
 
     def _guard(self, stop: bool) -> Battery:
         return guard(self.rom(), self.conf.integer("charge_limit_mv", CHARGE_LIMIT_MV),

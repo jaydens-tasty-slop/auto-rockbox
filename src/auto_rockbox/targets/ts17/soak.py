@@ -36,7 +36,7 @@ from random import Random
 from ... import card, linein, media
 from ...engine import Outcome, StepContext, scenario
 from ...errors import ArbError
-from ...keys import TAP_MS, duration_ms
+from ...keys import duration_ms
 from ...suites.soak import Boot, boot
 from ...workspace import ConfigError, Workspace
 
@@ -343,7 +343,7 @@ def usb(step: StepContext) -> Outcome:
     size = step.rng.randint(2, 12) << 20
     started = time.monotonic()
     with ThreadPoolExecutor(1) as pool:
-        running = pool.submit(boot, step, USB_S, usb=True)
+        running = pool.submit(boot, step, USB_S, settings={"usb": "storage"})
         probs, note = _round_trip(uuid, size, step.run_start, started,
                                   lambda: not running.done())
         b = running.result()
@@ -381,7 +381,7 @@ def alarm_keys(saved: tuple[int, int], now: datetime, lead_s: float) -> AlarmPla
     h0, m0 = saved
     if not (0 <= h0 < 24 and 0 <= m0 < 60):
         h0, m0 = opened.hour, opened.minute
-    at = opened + timedelta(milliseconds=ALARM_TAPS * TAP_MS, seconds=lead_s)
+    at = opened + timedelta(milliseconds=ALARM_TAPS * duration_ms("U"), seconds=lead_s)
     at = (at + timedelta(minutes=1)).replace(second=0, microsecond=0)
     keys = _keys(ALARM_MENU, _field(h0, at.hour, 24), "R", _field(m0, at.minute, 60), "S", 3000)
     return AlarmPlan(keys, at, f"set {at:%H:%M} from {h0:02d}:{m0:02d}")

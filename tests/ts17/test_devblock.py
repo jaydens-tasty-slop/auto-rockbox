@@ -5,13 +5,6 @@ from __future__ import annotations
 import struct
 
 from auto_rockbox.targets.ts17 import Ts17Error, devblock
-from auto_rockbox.targets.ts17.devblock import (
-    FLAG_BT_OFF,
-    FLAG_TRACE,
-    FLAG_USB,
-    FLAG_VOLUME,
-    RunOptions,
-)
 
 
 def _raises(fn: object, *args: object, match: str = "") -> None:
@@ -30,33 +23,35 @@ def test_magics_spell_their_names() -> None:
     assert struct.pack("<I", devblock.LAUNCH_TOKEN) == b"LRUN"
 
 
+def test_layout_matches_dev_ts17() -> None:
+    assert devblock.LOG - devblock.CFG == 0x200 == 4 + devblock.CFG_TEXT
+    assert devblock.RING_BYTES == 0x1000 - 0x200 - 16 - 20
+
+
 def test_run_config_bytes() -> None:
-    cfg = devblock.run_config(30, RunOptions(FLAG_USB | FLAG_TRACE | FLAG_VOLUME, -30),
-                              "9000 D S")
-    assert len(cfg) == 0x100 == devblock.LOG - devblock.CFG
-    assert cfg[:16] == b"TSDC" + struct.pack("<IIi", 30, 7, -30)
-    assert cfg[16:24] == b"9000 D S"
-    assert cfg[24:] == bytes(0xF0 - 8)
+    cfg = devblock.run_config({"return": "30", "keys": "9000 D S", "usb": "1"})
+    assert len(cfg) == devblock.LOG - devblock.CFG
+    text = b"return=30\nkeys=9000 D S\nusb=1\n"
+    assert cfg[:4] == b"TSDC"
+    assert cfg[4:4 + len(text)] == text
+    assert cfg[4 + len(text):] == bytes(devblock.CFG_TEXT - len(text))
 
 
-def test_run_config_key_limit() -> None:
-    assert devblock.run_config(0, RunOptions(), "D" * 239)[16 + 238:] == b"D\0"
-    _raises(devblock.run_config, 0, RunOptions(), "D" * 240, match="239")
+def test_run_config_limit() -> None:
+    fits = devblock.CFG_TEXT - 1 - len("keys=\n")
+    assert devblock.run_config({"keys": "D" * fits})[-2:] == b"\n\0"   # the NUL stays
+    _raises(devblock.run_config, {"keys": "D" * (fits + 1)}, match="run config over")
 
 
-def test_run_options() -> None:
-    assert devblock.run_options({}, usb=False) == RunOptions()
-    assert devblock.run_options({}, usb=True) == RunOptions(FLAG_USB)
-    assert devblock.run_options({"trace": "1"}, usb=False) == RunOptions(FLAG_TRACE)
-    assert devblock.run_options({"trace": "0"}, usb=True) == RunOptions(FLAG_USB)
-    assert devblock.run_options({"volume": "-30"}, usb=False) == RunOptions(FLAG_VOLUME, -30)
-    assert devblock.run_options({"bluetooth": "off"}, usb=False) == RunOptions(FLAG_BT_OFF)
-    assert devblock.run_options({"bluetooth": "card"}, usb=False) == RunOptions()
-    _raises(devblock.run_options, {"bluetooth": "on"}, False, match="off or card")
-    _raises(devblock.run_options, {"play": "/a.mp3"}, False, match="trace=0|1")
-    _raises(devblock.run_options, {"trace": "yes"}, False, match="0 or 1")
+def test_check_settings() -> None:
+    for ok in ({}, {"trace": "1"}, {"volume": "-30"}, {"volume": "0"}, {"bluetooth": "off"},
+               {"bluetooth": "card"}, {"usb": "storage"}, {"play": "/a.mp3"}):
+        devblock.check_settings(ok)
+    _raises(devblock.check_settings, {"bluetooth": "on"}, match="off|card")
+    _raises(devblock.check_settings, {"speaker": "0"}, match="no such run setting")
+    _raises(devblock.check_settings, {"trace": "yes"}, match="0|1")
     for bad in ("-73", "1", "-3.5", "loud"):
-        _raises(devblock.run_options, {"volume": bad}, False, match="-72..0")
+        _raises(devblock.check_settings, {"volume": bad}, match="-72..0")
 
 
 def test_crumb() -> None:
@@ -92,7 +87,8 @@ def test_log_exactly_full_and_cut_line() -> None:
 
 
 def test_log_header() -> None:
-    good = struct.pack("<III", devblock.LOG_MAGIC, 70, 3808)
-    assert devblock.ring_size(good) == (70, 3808)
+    good = struct.pack("<III", devblock.LOG_MAGIC, 70, devblock.RING_BYTES)
+    assert devblock.ring_size(good) == (70, devblock.RING_BYTES)
     _raises(devblock.ring_size, devblock.EMPTY_LOG_HEADER, match="no dev log")
     _raises(devblock.ring_size, struct.pack("<III", devblock.LOG_MAGIC, 1, 0x2000))
+    _raises(devblock.ring_size, struct.pack("<III", devblock.LOG_MAGIC, 1, 3804))  # 0x100 layout

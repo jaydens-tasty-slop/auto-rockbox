@@ -635,7 +635,7 @@ def scenario(name: str, *, weight: int = 1, target: Iterable[str] | None = None,
              arg("--no-boot", action="store_true",
                  help="the image already runs with its shell: start on it"),
              arg("--after-boot", action="append", default=[], metavar="COMMAND",
-                 help='a shell command after every boot, e.g. "cpu 192", "tickprio 0" '
+                 help='a shell command after every boot, e.g. "cpu max", "tickprio 0" '
                       '(repeatable)'),
              arg("--ledger", type=Path, help="CSV the run's line goes to (default: [torture] "
                  "ledger; none: no line)"),

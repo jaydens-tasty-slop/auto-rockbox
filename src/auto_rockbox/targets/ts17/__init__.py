@@ -7,7 +7,8 @@ The dev loop writes the image over stock's application partition (NOR
 that download mode leaves alone, and starts the image in place from a gadget
 (gadget.py). The image returns by a watchdog reset with the boot-mode magic
 set, after the run time or a hang, and the log ring is read from the same
-SRAM block (devblock.py).
+SRAM block (devblock.py). With usb=1 the dev shell answers on USB serial
+(apps/dev_shell.c, as on every target).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from typing import TYPE_CHECKING, ClassVar
 from ... import card, fb
 from ...elf import Elf, Symbolizer
 from ...registry import register_target
+from ...shell import Shell
 from ...target import Battery, Lcd, RunRequest, Target
 from ...workspace import ConfigError, Workspace
 from . import adfu, commands, devblock, gadget, nor, power, rdm, soak
@@ -37,6 +39,7 @@ FB_SYMBOL = "lcd_static_framebuffer"    # Rockbox's framebuffer, in SRAM at the 
 FB_KEEP = 0x100                 # the gadget's status block and a few results: what the
                                 # charger guard overwrites at the framebuffer's start
 SETTLE_S = 0.5                  # download mode answers a moment after it enumerates
+SHELL_VID, SHELL_PID = "1209", "0002"   # the dev build's USB IDs (ts17.h, pid.codes test IDs)
 
 
 def _note(msg: str) -> None:
@@ -53,21 +56,21 @@ class Ts17(Target):
                      the first run: `nor restore` without an image puts stock's
                      fw0_sys back from it (default: none)
 
-        lock         the device lock file in the temp dir (default:
-                     auto-rockbox-ts17.lock); "ts17dev.lock" makes arb and
-                     ts17dev exclude each other
+        lock, shell_lock
+                     the device and dev-shell lock files in the temp dir
+                     (default: auto-rockbox-ts17[-shell].lock); "ts17dev.lock"
+                     makes arb and ts17dev exclude each other
 
-    Run settings (--set): trace=1 logs a thread dump before the return;
-    volume=DB sets the volume at boot (and so keeps it from step to step).
+    Run settings (--set): those of apps/dev_shell.c (volume=DB, play=,
+    bluetooth=off, usb=storage, ...; devblock.SETTINGS), and trace=1, a
+    thread dump before the return.
     """
 
     name = "ts17"
     summary = "Actions Lark (Cortex-M4F), 4 MiB SPI NOR run in place, ADFU download mode"
     lcd = Lcd(128, 160)
-    key_letters = "UDLRSVvP"     # ring, centre, volume up/down, on/off (dev-ts17.c)
-    key_suffixes = "+"
-    keys_max = devblock.KEYS_MAX - 1
-    capabilities = frozenset({"framebuffer", "battery", "cold", "usb", "storage"})
+    key_letters = "UDLRSVvP"     # ring, centre, volume up/down, on/off
+    capabilities = frozenset({"framebuffer", "shell", "battery", "cold", "usb", "storage"})
     return_line = devblock.RETURN_LINE
     log_faults = r"lcd: frame timed out"
     # the soak's checks are wired (Line In), and a paired PC would take the stream
@@ -89,13 +92,13 @@ class Ts17(Target):
         return out.read_bytes()
 
     def before_run(self, req: RunRequest) -> None:
-        devblock.run_options(req.settings, req.usb)  # bad settings fail before any device call
+        devblock.check_settings(req.settings)   # bad settings fail before any device call
+        devblock.run_config(self.run_config(req))
         with gadget.connect(self.ws) as s:
             _note(power.guard(s).describe())
 
     def launch(self, req: RunRequest) -> None:
-        config = devblock.run_config(req.seconds, devblock.run_options(req.settings, req.usb),
-                                     req.keys)
+        config = devblock.run_config(self.run_config(req))
         data = self._flat(req.image)
         sp, reset = struct.unpack_from("<II", data)
         if not nor.XIP_BASE <= reset - 1 < nor.XIP_BASE + len(data):
@@ -171,6 +174,10 @@ class Ts17(Target):
             st = power.guard(s)
         return Battery(st.millivolts, st.charging, st.note)
 
+    def shell(self) -> Shell:
+        return Shell(self.name, SHELL_VID, SHELL_PID,
+                     lock_file=self.conf.string("shell_lock", "") or None)
+
     def _card_uuid(self) -> str | None:
         uuid = self.conf.get("card_uuid")
         if uuid is not None and not isinstance(uuid, str):
@@ -179,12 +186,12 @@ class Ts17(Target):
 
     @contextmanager
     def mass_storage(self, seconds: int, image: Path | None = None) -> Generator[Path]:
-        """Boots IMAGE (default: config `image`) with USB on; holds the device
-        lock throughout, as the card commands call this directly"""
+        """Boots IMAGE (default: config `image`) with usb=storage; holds the
+        device lock throughout, as the card commands call this directly"""
         uuid = self._card_uuid()
         if card.find(uuid):
             raise Ts17Error("the card is on this PC already: unmount or unplug it first")
-        req = RunRequest(image or self.image(), seconds, usb=True)
+        req = RunRequest(image or self.image(), seconds, settings={"usb": "storage"})
         with self.lock():
             self.before_run(req)
             self.launch(req)

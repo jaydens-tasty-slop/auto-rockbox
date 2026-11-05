@@ -23,7 +23,7 @@ to targets that declare it:
     shell        shell() gives a live dev shell (auto_rockbox.shell)
     battery      battery() reads the cell and guards the charger
     cold         RunRequest.cold boots through the normal boot chain
-    usb          RunRequest.usb lets Rockbox start its USB stack
+    usb          RunRequest.usb starts the dev shell on USB serial
     storage      mass_storage() puts the player's card on this PC
 """
 
@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from .errors import ArbError
-from .keys import KeyScriptError, check_script, duration_ms
+from .keys import SUFFIXES, KeyScriptError, check_script, duration_ms
 from .lock import DeviceLock
 from .workspace import Section, Workspace
 
@@ -49,6 +49,10 @@ if TYPE_CHECKING:
 
 class Unsupported(ArbError):
     """The target does not have this feature"""
+
+
+class RunConfigError(ArbError):
+    """A run's settings that its run config cannot carry"""
 
 
 @dataclass(frozen=True)
@@ -63,9 +67,9 @@ class RunRequest:
     image: Path                     # usually the build's rockbox.elf
     seconds: int                    # the image returns to the host after this long
     keys: str = ""                  # key script (auto_rockbox.keys)
-    settings: dict[str, str] = field(default_factory=dict)   # target-defined --set k=v
+    settings: dict[str, str] = field(default_factory=dict)   # --set k=v (apps/dev_shell.c)
     cold: bool = False
-    usb: bool = False
+    usb: bool = False               # the dev shell on USB serial (run config usb=1)
 
 
 @dataclass
@@ -80,8 +84,8 @@ class Target(ABC):
     summary: ClassVar[str]
     lcd: ClassVar[Lcd]
     key_letters: ClassVar[str]      # letters the firmware's key-script parser takes
-    key_suffixes: ClassVar[str] = "+"
-    keys_max: ClassVar[int] = 239   # longest key script the run config holds
+    key_suffixes: ClassVar[str] = SUFFIXES
+    keys_max: ClassVar[int] = 255   # apps/dev_shell.c keys_script[256]
     capabilities: ClassVar[frozenset[str]] = frozenset()
     return_margin: ClassVar[float] = 40.0   # seconds past req.seconds before "lost"
     # The log line a dev build writes when it returns on time: without it a
@@ -111,8 +115,23 @@ class Target(ABC):
         check_script(script, self.key_letters, self.key_suffixes)
 
     def key_duration_ms(self, script: str) -> int:
-        """How long the firmware takes over SCRIPT, about"""
+        """How long the firmware takes over SCRIPT"""
         return duration_ms(script)
+
+    @staticmethod
+    def run_config(req: RunRequest) -> dict[str, str]:
+        """The run config's lines for REQ (the dev build's dev_config()): the
+        return time, the key script, usb=1 for the dev shell, then the
+        settings; an explicit usb= setting beats req.usb"""
+        if clash := {"return", "keys"} & req.settings.keys():
+            raise RunConfigError(f"--set {'/'.join(sorted(clash))}: the return time is the "
+                                 "run's SECONDS and the key script its --keys")
+        cfg = {"return": str(req.seconds)}
+        if req.keys:
+            cfg["keys"] = req.keys
+        if req.usb:
+            cfg["usb"] = "1"
+        return cfg | req.settings
 
     # The dev loop: put the image on the player and start it, with the run
     # config (return time, keys, settings) where the image will find it

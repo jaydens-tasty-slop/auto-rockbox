@@ -60,12 +60,12 @@ class Boot:
 
 
 def boot(step: StepContext, seconds: int, keys: str = "", *, settings: dict[str, str] | None = None,
-         expect: tuple[str, ...] = (), cold: bool = False, usb: bool = False) -> Boot:
+         expect: tuple[str, ...] = (), cold: bool = False) -> Boot:
     """Run the image for SECONDS with KEYS and judge its log: lost, an early
     return (no `return_line`), failure lines, lines EXPECT names missing"""
     s = suite(step)
     t = step.target
-    req = RunRequest(s.image, seconds, keys, {**s.settings, **(settings or {})}, cold, usb)
+    req = RunRequest(s.image, seconds, keys, {**s.settings, **(settings or {})}, cold)
     shots = step.out / "shots" / f"{step.index:03d}" if s.shots else None
     t0 = datetime.now(UTC)
     r = run(t, req, shots)
