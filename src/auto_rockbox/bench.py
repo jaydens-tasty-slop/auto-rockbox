@@ -15,9 +15,6 @@ and the player no longer answers a page.
 from __future__ import annotations
 
 import csv
-import json
-import subprocess
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from . import linein
+from .bt import bluez
 from .errors import ArbError
 
 A2DP_RATE = 44100               # the stream's own rate: no resampling in the log
@@ -92,79 +90,32 @@ def run_end(log: Path, start: datetime, quiet: int = 300) -> RunEnd | None:
 
 # ---------------------------------------------------------------- Bluetooth
 
-def connected(addr: str) -> bool | None:
-    """Whether BlueZ has a link to ADDR; None if bluetoothctl did not answer"""
-    try:
-        out = subprocess.run(["bluetoothctl", "info", addr], capture_output=True, text=True,
-                             timeout=20, check=False).stdout
-    except subprocess.TimeoutExpired:
-        return None
-    return "\tConnected: yes" in out
-
-
-def sink_index(name: str) -> str | None:
-    out = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True,
-                         timeout=20, check=True).stdout
-    return next((ln.split("\t")[0] for ln in out.splitlines()
-                 if ln.split("\t")[1:2] == [name]), None)
-
-
-def route(addr: str, sink: str) -> None:
-    """Moves the player's stream (a loopback into the default sink, named
-    after its address) to SINK. Best effort: a failed move is retried at the
-    next poll, and must not end a 20-hour watch."""
-    node = addr.replace(":", "_")
-    try:
-        target = sink_index(sink)
-        out = subprocess.run(["pactl", "-f", "json", "list", "sink-inputs"],
-                             capture_output=True, text=True, timeout=20, check=True).stdout
-        for si in json.loads(out or "[]"):
-            if node in json.dumps(si.get("properties", {})) and str(si.get("sink")) != target:
-                subprocess.run(["pactl", "move-sink-input", str(si["index"]), sink],
-                               timeout=20, check=False)
-    except (OSError, subprocess.SubprocessError, ValueError, KeyError):
-        pass
-
-
 def bt_watch(addr: str, log: Path, sink: str, echo: Callable[[str], object] = print) -> int:
     """Polls the link every POLL_S s, appending "utc,connected" to LOG, and
     keeps the player's stream on SINK. After a drop the PC pages the player
     for PAGE_S s (stock firmware does not reconnect by itself): 0 if it never
     answers (the run is over), 2 if it does (a range drop: check the run)."""
-    if sink_index(sink) is None:
+    if bluez.sink_index(sink) is None:
         raise BenchError(f"no sink {sink}: pactl load-module module-null-sink sink_name={sink}")
-
-    def record(up: bool) -> None:
-        with log.open("a") as f:
-            f.write(f"{_now().isoformat(timespec='seconds')},{int(up)}\n")
-
     last_up: datetime | None = None
-    while True:
-        up = connected(addr)
-        if up is not None:
-            record(up)
-        if up or last_up is None:
-            if up:
-                last_up = _now()
-                route(addr, sink)
-            time.sleep(POLL_S)
-            continue
-        if up is None:
-            time.sleep(POLL_S)
-            continue
-        deadline = time.monotonic() + PAGE_S
-        while time.monotonic() < deadline:
-            subprocess.run(["bluetoothctl", "connect", addr], capture_output=True, timeout=40,
-                           check=False)
-            back = connected(addr)
-            record(bool(back))
-            if back:
-                echo(f"dropped after {last_up.isoformat(timespec='seconds')}, reconnected "
-                     f"{_now().isoformat(timespec='seconds')}: check the stream")
-                return 2
-            time.sleep(PAGE_RETRY_S)
-        echo(f"run over: last connected {last_up.isoformat(timespec='seconds')}")
-        return 0
+    for ev in bluez.watch_link(addr, period=POLL_S, page_for=PAGE_S, page_every=PAGE_RETRY_S,
+                               sink=sink):
+        at = ev.at.astimezone(UTC)
+        if ev.kind == "poll":
+            with log.open("a") as f:
+                f.write(f"{at.isoformat(timespec='seconds')},{int(ev.connected)}\n")
+            if ev.connected:
+                last_up = at
+        elif ev.kind == "back":
+            since = last_up.isoformat(timespec="seconds") if last_up else "?"
+            echo(f"dropped after {since}, reconnected {at.isoformat(timespec='seconds')}: "
+                 "check the stream")
+            return 2
+        elif ev.kind == "over":
+            since = last_up.isoformat(timespec="seconds") if last_up else "?"
+            echo(f"run over: last connected {since}")
+            return 0
+    return 0
 
 
 # ---------------------------------------------------------------- discharge curve

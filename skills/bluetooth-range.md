@@ -49,10 +49,14 @@ sink so nobody hears it. A person carries the player in a pocket along the
 route and back. The PC records everything:
 
 ```
-sudo arb bt capture build/bt/pocket-1028          # HCI trace + RSSI every 2 s (root)
-arb bt gaplog build/bt/pocket-1028/gaps.txt         # stream gaps, live
-arb bt watch build/bt/pocket-1028/conn.txt          # link state; pages after a drop
+arb bt capture build/bt/pocket-1028     # HCI trace + RSSI every 2 s: prints the sudo line
+arb bt gaplog build/bt/pocket-1028      # stream gaps, live (gaps.txt)
+arb bt watch build/bt/pocket-1028       # link state; pages after a drop (conn.txt)
 ```
+
+Every tool writes its own fixed file name into the run directory
+(`pc.btsnoop`, `pc-rssi.txt`, `gaps.txt`, `conn.txt`, `walk.txt`), and the
+player's address defaults to `[bluetooth] player` in the workspace config.
 
 With USB unplugged the player cannot log live, so set `sdlog=1` in its dev
 config. It appends its log to the card, which you read back afterwards
