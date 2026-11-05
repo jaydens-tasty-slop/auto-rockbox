@@ -48,5 +48,7 @@ ignore = [
 python-version = "3.12"
 
 [tool.ty.rules]
-# every diagnostic is an error: the tree stays clean
 possibly-unresolved-reference = "error"
+
+[tool.ty.terminal]
+error-on-warning = true         # the tree stays clean: warnings fail the check too
