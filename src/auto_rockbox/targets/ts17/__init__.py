@@ -69,7 +69,7 @@ class Ts17(Target):
     keys_max = devblock.KEYS_MAX - 1
     capabilities = frozenset({"framebuffer", "battery", "cold", "usb", "storage"})
     return_line = devblock.RETURN_LINE
-    log_faults = r"lcd: frame timed out|xip codec: bad header"
+    log_faults = r"lcd: frame timed out"
     # the soak's checks are wired (Line In), and a paired PC would take the stream
     soak_settings: ClassVar[dict[str, str]] = {"bluetooth": "off"}
 
