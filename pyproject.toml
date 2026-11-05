@@ -1,0 +1,55 @@
+[project]
+name = "auto-rockbox"
+version = "0.1.0"
+description = "A dev loop for porting Rockbox to MP3 players: flash, boot, log, keys, screenshots, Line In and webcam checks, soak and torture runs"
+readme = "README.md"
+license = "GPL-2.0-or-later"
+authors = [
+    { name = "jaydens-tasty-slop", email = "325336397+jaydens-tasty-slop@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "pillow>=10.0",
+    "pyserial>=3.5",
+    "pyusb>=1.2",
+]
+
+[project.optional-dependencies]
+# Bluetooth peers (virtual controllers, A2DP sink, HID device) for ports with a BT stack
+bt = ["bumble>=0.0.200"]
+
+[project.scripts]
+arb = "auto_rockbox.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "types-pyserial>=3.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PL", "PTH"]
+ignore = [
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915",  # long dispatch functions are fine
+    "PLR2004",                                   # register values and protocol constants
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+packages = ["auto_rockbox"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["usb.*", "bumble.*"]
+ignore_missing_imports = true

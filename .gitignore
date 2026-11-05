@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+dist/
+# built on demand from sources in the package
+*.o
+*.elf
+*.bin
