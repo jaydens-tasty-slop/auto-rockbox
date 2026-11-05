@@ -47,15 +47,17 @@ class _Format(logging.Formatter):
 
 
 @contextmanager
-def peer_logging(path: Path, verbose: bool = False, trace: bool = False) -> Generator[None]:
+def peer_logging(path: Path, verbose: bool = False, trace: bool = False, *,
+                 echo: bool = True) -> Generator[None]:
     """The peer's lines (and Bumble's warnings; with VERBOSE its debug log)
-    on stdout and in PATH while the block runs; TRACE: controller A's HCI
-    traffic too"""
+    in PATH, and with ECHO on stdout, while the block runs; TRACE:
+    controller A's HCI traffic too"""
     root = logging.getLogger()
     saved = (root.level, logging.getLogger("bumble").level, h4log.level)
     fmt = _Format(time.time())
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout),
-                                       logging.FileHandler(path, "w")]
+    handlers: list[logging.Handler] = [logging.FileHandler(path, "w")]
+    if echo:
+        handlers.append(logging.StreamHandler(sys.stdout))
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
     for h in handlers:
         h.setFormatter(fmt)

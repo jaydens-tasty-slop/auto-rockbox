@@ -29,12 +29,14 @@ paired with this PC (`arb bt-peer pcsink`) and a Bluetooth build:
     [bluetooth]
     player = "AA:BB:CC:DD:EE:FF"    # the player's BD_ADDR
     sink = "arb_null"               # the null sink its stream goes to (made if missing)
+    adapter = "usb:VID:PID"         # this PC's adapter for Bumble (bt-headset, bt-hid)
 
 `bt-pcpower` (this PC's adapter off and on: it once wedged until bluetoothd
-restarted) is off unless --weights gives it a weight. The cases that need a
-peer of their own (the headset, HID device, stream capture and pairing
-agent for forget-and-pair of `arb bt-peer`, auto_rockbox.btpeer) are not
-ported yet.
+restarted) is off unless --weights gives it a weight. bt-headset and bt-hid
+lend the adapter to a Bumble peer (`arb bt-peer pcheadset`, `arb yp3
+bt-peer hid`; `uv sync --extra bt`) with keys of its own: both sides forget
+theirs first, and the next step pairs the player with this PC again
+through a bluetoothctl agent.
 """
 
 from __future__ import annotations
@@ -46,8 +48,8 @@ import threading
 import time
 from argparse import Namespace
 from collections import Counter
-from collections.abc import Callable, Iterable
-from contextlib import suppress
+from collections.abc import Callable, Generator, Iterable
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -55,6 +57,8 @@ from typing import Any, ClassVar
 
 from ... import fb, linein
 from ...bt import bluez
+from ...btpeer import analysis, have_bumble, pcsink
+from ...btpeer.options import HeadsetOptions, HidOptions
 from ...elf import Elf
 from ...errors import ArbError
 from ...registry import Context, arg, command
@@ -75,6 +79,7 @@ from .shot import screenshot
 
 YP3 = {"yp3"}
 BT_PC = "bt-pc"                 # suite feature: this PC can be the player's headset
+BT_BUMBLE = "bt-bumble"         # and its adapter can be lent to a Bumble peer
 
 # The card
 CFG_DIR = "/yp3dev"             # settings files pushed at each boot; recordings
@@ -185,6 +190,17 @@ BT_LINK_TBL = 0x804128          # ROM link address table: 7 x {u8 in use, BD_ADD
 AVRCP = ["Play", "Pause", "Next", "Previous", "VolumeUp", "VolumeDown", "Stop",
          "FastForward", "Rewind"]
 AVRCP_WEIGHTS = [4, 4, 3, 3, 2, 2, 1, 1, 1]
+PLAYER_NAME = "Rockbox"         # the player's Bluetooth name starts with this
+CAPTURE_S = (4, 6)              # bt-capture records this many s of the tone's loud part,
+CAPTURE_FROM_MS = (1500, 3000)  # starting this far into it (its start was heard by then)
+CAPTURE_GAP_MS = 10             # a shorter dip is not a dropout
+TONE_HZ = (1000.0, 1500.0)      # TONE's left and right channels
+TONE_HZ_TOL = 0.02
+HEADSET_CYCLE_S = 120           # a bt-headset cycle's limit (plus HEADSET_SPARE_S)
+HEADSET_SPARE_S = 60
+HID_LIMIT_S = 300
+HID_KEYS = ["up", "down", "left", "right", "b", "home"]     # never A: it selects
+HID_DS4_KEYS = ["l1", "r1", "l2", "r2"]
 
 
 # ---------------------------------------------------------------- replies
@@ -464,10 +480,11 @@ def coverage_file(t: Target) -> Path:
 class PcLink:
     """This PC's Bluetooth adapter as the player's headset, through BlueZ
     (bluetoothctl, busctl). While routing, the player's stream is kept on a
-    null sink (made if missing, removed again)."""
+    null sink (made if missing, removed again). TRANSPORT: the adapter for
+    Bumble ("" if none)."""
 
-    def __init__(self, player: str, sink: str) -> None:
-        self.player, self.sink = player.upper(), sink
+    def __init__(self, player: str, sink: str, transport: str = "") -> None:
+        self.player, self.sink, self.transport = player.upper(), sink, transport
         self.adapter = ""
         self.path = ""                  # the player's D-Bus object, for AVRCP
         self.power_state = ""
@@ -526,6 +543,49 @@ class PcLink:
 
     def disconnect(self) -> None:
         self.ctl("disconnect", self.player)
+
+    def remove(self) -> None:
+        """BlueZ forgets the player (its link key, its trust)"""
+        self.ctl("remove", self.player)
+
+    @contextmanager
+    def agent(self, log: Path, discoverable: bool) -> Generator[None]:
+        """A bluetoothctl agent answering BlueZ's pairing prompts with yes, its
+        lines in LOG. DISCOVERABLE: after remove() BlueZ no longer knows the
+        player, and the adapter takes its page only while discoverable (page
+        scan follows the paired devices)."""
+        with (log.open("a", buffering=1) as f,
+              pcsink.Agent(PLAYER_NAME, "NoInputNoOutput", f, discoverable=discoverable,
+                           say=lambda text: f.write(text + "\n"))):
+            yield
+
+    def responsive(self) -> bool:
+        """Whether the controller completes an HCI command (scan enable)"""
+        ok = "succeeded" in self.ctl("discoverable", "on")
+        self.ctl("discoverable", "off")
+        return ok
+
+    def reclaim(self, secs: float = 30) -> bool:
+        """The adapter back with BlueZ after a Bumble peer had it: whether BlueZ
+        has it, powered and answering within SECS"""
+        end = time.monotonic() + secs
+        attached = reset = False
+        while time.monotonic() < end:
+            if "Controller" in self.ctl("show"):
+                if (self.powered() or self.power(True)) and self.responsive():
+                    return True
+                if not reset:
+                    # wedged (2026-10-31: every command Busy, PowerState
+                    # stuck in on-disabling)
+                    bluez.give_back(self.transport, reset=True)
+                    reset = True
+                    time.sleep(6)
+                    continue
+            elif not attached and time.monotonic() > end - secs + 5:
+                bluez.give_back(self.transport)     # still detached from btusb
+                attached = True
+            time.sleep(1)
+        return False
 
     def connect(self) -> None:
         self.last_connect = self.ctl("connect", self.player, timeout=40)
@@ -592,9 +652,11 @@ class Yp3Torture(TortureSuite):
         self.coverage = Coverage(coverage_file(target))
         bt = target.ws.section("bluetooth")
         player = bt.get("player")
-        self.pc = PcLink(player, bt.string("sink", "arb_null")) if isinstance(player, str) else None
+        self.pc = (PcLink(player, bt.string("sink", "arb_null"), bt.string("adapter", ""))
+                   if isinstance(player, str) else None)
         if self.pc:
-            self.features = frozenset({BT_PC})
+            self.features = frozenset({BT_PC} | ({BT_BUMBLE} if self.pc.transport and
+                                                 have_bumble() else set()))
         self.bt_known = False
         self.bt_off = ""                # why the bt-* scenarios do nothing this run
         self.bt_recovering = False
@@ -957,17 +1019,35 @@ class Yp3Torture(TortureSuite):
         if s.status == BT_OFF:
             self.fail("bt setup: power on from the menu failed")
             return False
-        for by_pc in (False, True):
-            # the player's link or page to another device (auto-connect takes
-            # the most recent one), or its own page of the PC, would keep the
-            # next try from getting through
-            if self.bt_status().addr and (by_pc or s.addr != pc.adapter):
-                self.sh("bt stack disconnect")
-                self.bt_wait(lambda st: st.addr is None, 8)     # page timeout 5.12 s
-            if self.bt_reconnect("setup", by_pc, quiet=True) is not None:
-                if by_pc:
-                    self.note(f"the player's connect failed (linked to {s.addr or 'nothing'}); "
-                              "the PC's worked")
+        # not paired: the crawl reaches Forget, bt-headset and bt-hid forget
+        # this PC on both sides
+        paired = self.bt_paired()
+        with self.pairing(not paired):
+            for by_pc in (False, True):
+                # the player's link or page to another device (auto-connect
+                # takes the most recent one), or its own page of the PC,
+                # would keep the next try from getting through
+                if self.bt_status().addr and (by_pc or s.addr != pc.adapter):
+                    self.sh("bt stack disconnect")
+                    self.bt_wait(lambda st: st.addr is None, 8)     # page timeout 5.12 s
+                if self.bt_reconnect("setup", by_pc, quiet=True) is not None:
+                    if by_pc:
+                        self.note(f"the player's connect failed (linked to "
+                                  f"{s.addr or 'nothing'}); the PC's worked")
+                    return True
+        # the player forgot this PC while BlueZ kept its key, or the player's
+        # key is another device's with this address (a Bumble peer's, if its
+        # step was cut short): both keys go
+        if paired:
+            self.sh(f"bt stack forget {pc.adapter}")
+        pc.remove()
+        if self.bt_status().addr:       # BlueZ paged with its old key: unpaired, idle
+            self.sh("bt stack disconnect")
+            self.bt_wait(lambda st: st.addr is None, 8)
+        with self.pairing(True):
+            if self.bt_reconnect("setup", quiet=True) is not None:
+                self.note("paired again only after removing "
+                          + ("both keys" if paired else "BlueZ's old key"))
                 return True
         # a page the controller refused right after a lost link (0405 0c)
         # keeps its link entry: later pages to that address fail 0b and the
@@ -986,14 +1066,29 @@ class Yp3Torture(TortureSuite):
             finally:
                 self.bt_recovering = False
             return False
-        paired = any(ln.startswith("bt paired") and pc.adapter in ln
-                     for ln in self.sh("bt stack list"))
         self.fail(f"bt setup: no connection from either side within {BT_CONNECT_S} s: status "
-                  f"{s.status}, player linked to {s.addr or 'nothing'}, paired {paired}, PC sees "
-                  f"{'connected' if pc.connected() else 'no link'}")
-        if not paired:
-            self.bt_off = "the player no longer knows this PC: pair them again (arb bt-peer pcsink)"
+                  f"{s.status}, player linked to {s.addr or 'nothing'}, paired "
+                  f"{self.bt_paired()}, PC sees {'connected' if pc.connected() else 'no link'}")
         return False
+
+    def bt_paired(self) -> bool:
+        """Whether the player has this PC among its paired devices"""
+        return any(ln.startswith("bt paired") and self.link().adapter in ln
+                   for ln in self.sh("bt stack list"))
+
+    @contextmanager
+    def pairing(self, on: bool, discoverable: bool = True) -> Generator[None]:
+        """With ON, a pairing agent on this PC while the block runs (its lines
+        beside the step); then the player trusted (BlueZ asks no agent
+        before its profiles connect) and its D-Bus path found again"""
+        if not on:
+            yield
+            return
+        pc = self.link()
+        with pc.agent(self.step_file("bt-agent", ".log"), discoverable):
+            yield
+        bluez.trust(pc.player)
+        pc.find()
 
     def bt_toggle(self) -> bool:
         """Settings > Bluetooth > "Bluetooth: On/Off" with real keys"""
@@ -1129,6 +1224,31 @@ class Yp3Torture(TortureSuite):
             time.sleep(5)
         self.fail(f"{what}: bitpool {bp} after {BT_BITPOOL_S} s at the desk "
                   f"(want {BT_BITPOOL_OK})")
+
+    def lend_adapter(self, what: str) -> bool:
+        """Before a Bumble peer takes this PC's adapter: the link goes and both
+        sides forget their keys (the peer has this PC's address but keys of
+        its own; BlueZ pages the player as soon as it has the adapter back,
+        and with its old key that link hangs unpaired)"""
+        pc = self.link()
+        self.sh("bt stack disconnect")
+        if not self.bt_gone(what):
+            return False
+        self.sh(f"bt stack forget {pc.adapter}")
+        pc.remove()
+        return True
+
+    def take_back_adapter(self, what: str) -> None:
+        """After the peer: the player forgets its key, BlueZ gets the adapter
+        back, and the player pairs with this PC again and streams"""
+        pc = self.link()
+        self.sh(f"bt stack forget {pc.adapter}")
+        if not pc.reclaim():
+            self.fail(f"{what}: BlueZ did not get this PC's adapter back: bt off for this run")
+            self.bt_off = "BlueZ lost this PC's adapter"
+            return
+        if self.bt_ready():
+            self.bt_streaming(what)
 
     def pc_stuck(self, what: str) -> str:
         """This PC's adapter did not reach the power state asked for: not the
@@ -1803,14 +1923,16 @@ def usb(t: Yp3Torture) -> str:
 
 # ---------------------------------------------------------------- Bluetooth
 
-def bt_scenario(case: str, weight: int) -> Callable[[Callable[[Yp3Torture], str]],
-                                                     Callable[[Yp3Torture], str]]:
-    """A bt-CASE step (Yp3Torture.bt_case around FN)"""
+def bt_scenario(case: str, weight: int, bumble: bool = False) -> Callable[
+        [Callable[[Yp3Torture], str]], Callable[[Yp3Torture], str]]:
+    """A bt-CASE step (Yp3Torture.bt_case around FN); BUMBLE: it lends this
+    PC's adapter to a Bumble peer"""
     def register(fn: Callable[[Yp3Torture], str]) -> Callable[[Yp3Torture], str]:
         def step(t: Yp3Torture) -> str:
             return t.bt_case(fn)
         step.__doc__ = fn.__doc__
-        scenario(f"bt-{case}", weight=weight, target=YP3, needs={BT_PC})(step)
+        needs = {BT_PC, BT_BUMBLE} if bumble else {BT_PC}
+        scenario(f"bt-{case}", weight=weight, target=YP3, needs=needs)(step)
         return fn
     return register
 
@@ -1996,6 +2118,150 @@ def bt_reboot(t: Yp3Torture) -> str:
         t.fail(f"{what}: no auto-connect after the boot: status {s.status}")
         return what
     t.bt_streaming(what)
+    return what
+
+
+@bt_scenario("forget", 1)
+def bt_forget(t: Yp3Torture) -> str:
+    """The player forgets this PC mid-stream and pairs with it again (a
+    bluetoothctl agent answers BlueZ's prompts): paired, streaming"""
+    pc = t.link()
+    what = "forget the PC, pair again"
+    secs = None
+    with t.pairing(True, discoverable=False):      # BlueZ still knows the player
+        t.sh(f"bt stack forget {pc.adapter}")
+        if t.bt_gone(what):
+            secs = t.bt_reconnect(what)
+    if not t.bt_paired():
+        t.fail(f"{what}: this PC is not among the player's paired devices again")
+    if secs is not None:
+        t.bt_streaming(what)
+        what += f" in {secs:.1f} s"
+    return what
+
+
+@bt_scenario("capture", 2)
+def bt_capture(t: Yp3Torture) -> str:
+    """The stream as this PC hears it: CAPTURE_S s of the tone's loud part
+    recorded from the null sink, both tones, no dropouts"""
+    pc = t.link()
+    t.sh(f"play {TONE}")
+    what = f"capture {TONE}"
+    s, secs = t.bt_wait(lambda st: st.status == BT_STREAMING, 10)
+    if secs is None:
+        t.fail(f"{what}: not streaming: status {s.status} sink {s.sink}")
+        return what
+    lo, hi = CAPTURE_FROM_MS
+    end = time.monotonic() + 10
+    while (((p := t.playing()).path != TONE or p.elapsed < lo)
+           and time.monotonic() < end):
+        time.sleep(0.2)
+    if p.path != TONE or not lo <= p.elapsed <= hi:
+        t.fail(f"{what}: playing {p.path} at {p.elapsed} ms, not the tone at {lo}..{hi} ms")
+        return what
+    wav = t.step_file("bt-capture", ".wav")
+    pcsink.record(wav, pc.sink, t.rng.randint(*CAPTURE_S))
+    lines: list[str] = []
+    r = analysis.analyse_wav(wav, lines.append)
+    t.transcript += ["", f"{wav.name}, from {p.elapsed} ms into the tone:", *lines]
+    what += f", {r.seconds:.1f} s from {p.elapsed} ms"
+    if bad := capture_problems(r):
+        t.fail(f"{what}: " + "; ".join(bad))
+    return what
+
+
+def capture_problems(r: analysis.WavAnalysis) -> list[str]:
+    """What is wrong with a capture of the tone's loud part"""
+    bad = [f"channel {ch}: tone {hz and round(hz)} Hz, want {want:g}"
+           for ch, (hz, want) in enumerate(zip(r.medians, TONE_HZ, strict=False))
+           if hz is None or abs(hz - want) > want * TONE_HZ_TOL]
+    if r.seconds < min(CAPTURE_S) - 1:
+        bad.append(f"only {r.seconds:.1f} s recorded")
+    gaps = [(round(s, 2), round(ms)) for s, ms in r.gaps if ms >= CAPTURE_GAP_MS]
+    if gaps:
+        bad.append(f"{len(gaps)} dropouts (s, ms): {gaps[:5]}")
+    return bad
+
+
+def peer_failure(log: Path) -> str:
+    """A failed Bumble peer's last words"""
+    try:
+        lines = [ln for ln in log.read_text(errors="replace").splitlines() if ln.strip()]
+    except OSError:
+        return "no peer log"
+    return " | ".join(lines[-4:])[:300]
+
+
+@bt_scenario("headset", 2, bumble=True)
+def bt_headset(t: Yp3Torture) -> str:
+    """This PC's adapter as a headset (`arb bt-peer pcheadset`) that pages
+    the player 3-8 times: role switches, links that vanish once the music
+    plays, re-pages that vanish again. Every cycle must reach the music;
+    then the player pairs with this PC again and streams."""
+    pc = t.link()
+    if others := pc.others():
+        return f"headset skipped: {len(others)} other device(s) on the adapter"
+    cycles, seed = t.rng.randint(3, 8), t.rng.randrange(1 << 30)
+    out = t.step_file("headset", "")
+    what = f"headset x{cycles} seed {seed} ({out.name})"
+    if not t.lend_adapter(what):
+        return what
+    from ...btpeer import pcheadset  # noqa: PLC0415 (Bumble)
+    opts = HeadsetOptions(out=out, adapter=pc.transport, player=pc.player, cycles=cycles,
+                          switch_after=(0.0, 6.0), switch_share=0.8, lose_share=0.4,
+                          relose_share=0.4, repage_wait=40.0, seed=seed)
+    limit = cycles * HEADSET_CYCLE_S + HEADSET_SPARE_S
+    t.sh("repeat 1")                    # music for every cycle
+    t.sh("bt stack sink bt")
+    if track := t.library_track():
+        t.sh(f"play {track}")
+    try:
+        pcheadset.main(opts, limit=limit, echo=False)
+    except TimeoutError:
+        t.fail(f"{what}: the cycles still ran after {limit} s")
+    finally:
+        t.sh("repeat 0")
+        t.take_back_adapter(what)
+    try:
+        lines = (out / "cycles.txt").read_text().splitlines()
+    except OSError:
+        lines = []
+    bad = [ln.split(" ", 2)[2] for ln in lines if not re.search(r"cycle \d+: ok;", ln)]
+    lost = sum("vanished" in ln for ln in lines)
+    what += f": {len(lines) - len(bad)} of {cycles} ok, {lost} lost"
+    if bad or len(lines) < cycles:
+        t.fail(f"{what}: " + ("; ".join(bad[:3]) or f"{len(lines)} cycles ran"))
+    return what
+
+
+@bt_scenario("hid", 2, bumble=True)
+def bt_hid(t: Yp3Torture) -> str:
+    """This PC's adapter as a DualShock 4 or keyboard (`arb yp3 bt-peer
+    hid`) that the player scans for and pairs with, then 4-10 random keys
+    (never A), sometimes with music and 30 s more connected: the player
+    must see each key. Then it pairs with this PC again and streams."""
+    pc = t.link()
+    if others := pc.others():
+        return f"hid skipped: {len(others)} other device(s) on the adapter"
+    kind = t.rng.choice(["ds4", "keyboard"])
+    press = t.rng.choices(HID_KEYS + (HID_DS4_KEYS if kind == "ds4" else []),
+                          k=t.rng.randint(4, 10))
+    play = t.library_track() if t.rng.random() < 0.4 else None
+    out = t.step_file("hid", "")
+    what = f"hid {kind} {' '.join(press)!r}{' playing' if play else ''} ({out.name})"
+    if not t.lend_adapter(what):
+        return what
+    from ...btpeer import hid  # noqa: PLC0415 (Bumble)
+    opts = HidOptions(out=out, kind=kind, press=press, just_works=kind == "keyboard",
+                      forget=True, play=play, stay=30.0 if play else 0.0)
+    try:
+        if hid.main_air(opts, t.shell, pc.transport, pc.player, limit=HID_LIMIT_S, echo=False):
+            t.fail(f"{what}: {peer_failure(out / 'peer.log')}")
+    except TimeoutError:
+        t.fail(f"{what}: still running after {HID_LIMIT_S} s")
+    finally:
+        t.keys("UL 500")                # Home: the keys may have left a menu open
+        t.take_back_adapter(what)
     return what
 
 

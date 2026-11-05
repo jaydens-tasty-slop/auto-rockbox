@@ -35,7 +35,6 @@ say whether the cycles passed; cycles.txt does.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import random
 import time
 from typing import Any
@@ -326,8 +325,9 @@ async def run(opts: HeadsetOptions) -> None:
                     await hs.start()
 
 
-def main(opts: HeadsetOptions) -> None:
-    """Ctrl-C stops the cycles; cycles.txt has a line for each one that ended"""
+def main(opts: HeadsetOptions, *, limit: float | None = None, echo: bool = True) -> None:
+    """The cycles; cycles.txt has a line for each one that ended. TimeoutError
+    after LIMIT s. ECHO: the log on stdout too."""
     opts.out.mkdir(parents=True, exist_ok=True)
-    with peer_logging(opts.out / "headset.log"), contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(run(opts))
+    with peer_logging(opts.out / "headset.log", echo=echo):
+        asyncio.run(asyncio.wait_for(run(opts), limit))

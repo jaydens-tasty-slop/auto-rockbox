@@ -475,8 +475,10 @@ def main(opts: HidOptions) -> int:
         return asyncio.run(run_sim(opts))
 
 
-def main_air(opts: HidOptions, shell: Shell, adapter: str, player: str) -> int:
+def main_air(opts: HidOptions, shell: Shell, adapter: str, player: str, *,
+             limit: float | None = None, echo: bool = True) -> int:
+    """Over the air; TimeoutError after LIMIT s. ECHO: the log on stdout too."""
     _prepare(opts)
-    with peer_logging(opts.out / "peer.log", opts.verbose):
-        return asyncio.run(run_air(opts, shell, adapter, player))
+    with peer_logging(opts.out / "peer.log", opts.verbose, echo=echo):
+        return asyncio.run(asyncio.wait_for(run_air(opts, shell, adapter, player), limit))
 

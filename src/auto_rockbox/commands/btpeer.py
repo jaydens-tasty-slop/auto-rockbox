@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 from argparse import Namespace
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import fields
 from pathlib import Path
 
@@ -225,7 +226,8 @@ def pcheadset_cmd(ctx: Context, args: Namespace) -> int:
         switch_share=args.switch_share, deadline=args.deadline, min_packets=args.min_packets,
         play=args.play, gap=args.gap, repage_wait=args.repage_wait,
         lose_share=args.lose_share, relose_share=args.relose_share, seed=args.seed)
-    pcheadset.main(opts)
+    with suppress(KeyboardInterrupt):      # Ctrl-C ends the cycles
+        pcheadset.main(opts)
     return 0
 
 

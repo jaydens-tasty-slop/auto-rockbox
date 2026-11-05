@@ -27,7 +27,11 @@ class BumbleMissing(ArbError):
     pass
 
 
+def have_bumble() -> bool:
+    return importlib.util.find_spec("bumble") is not None
+
+
 def need_bumble() -> None:
     """Raises BumbleMissing unless Bumble is installed"""
-    if importlib.util.find_spec("bumble") is None:
+    if not have_bumble():
         raise BumbleMissing("the Bluetooth peers need Bumble: uv sync --extra bt")

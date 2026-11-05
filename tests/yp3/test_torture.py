@@ -6,8 +6,10 @@ YP3 suite on a fake YP3. No device is touched; sleeps take no time."""
 
 from __future__ import annotations
 
+import importlib.util
 import random
 import tempfile
+import wave
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, tzinfo
@@ -15,7 +17,11 @@ from pathlib import Path
 from typing import Self
 from unittest import mock
 
+import numpy as np
+
 from auto_rockbox import engine
+from auto_rockbox.btpeer import analysis
+from auto_rockbox.btpeer.hidkeys import keys_for
 from auto_rockbox.engine import StepContext
 from auto_rockbox.lock import DeviceLock
 from auto_rockbox.shell import NoShell, Reply, Shell
@@ -35,7 +41,9 @@ YP3_WEIGHTS = {"codecs": 12, "skips": 6, "monkey": 8, "plugins": 6, "fs": 4, "db
                "codecmix": 8, "shuffle": 8, "folders": 4, "decode": 10, "linein": 4,
                "video": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,
-              "bt-disturb": 2, "bt-reboot": 1}
+              "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
+BUMBLE_WEIGHTS = {"bt-headset": 2, "bt-hid": 2}
+PLAYER, PC = "AA:BB:CC:DD:EE:FF", "00:1A:7D:DA:71:13"
 
 # ---------------------------------------------------------------- samples
 
@@ -261,6 +269,9 @@ class Yp3Shell(Shell):
         self.msgs: list[str] = []           # "KIND TEXT", numbered from 1
         self.charging, self.level = False, 70
         self.glitch_on = ""                 # a command that underruns
+        self.pc: FakePcLink | None = None   # this PC, for Bluetooth
+        self.bt_addr: str | None = None     # linked to
+        self.bt_paired = True               # the player has this PC's key
         self.boot()
 
     def boot(self) -> None:
@@ -301,7 +312,7 @@ class Yp3Shell(Shell):
             return [f"audio {self.audio} elapsed {self.elapsed()}/233046 ms 44100 Hz buffered "
                     f"40968/40968 periods 0 file {self.path}" if self.audio else STATUS_STOPPED]
         elif cmd == "log":
-            return self.log[-40:]
+            return self.log[-40:] + (["bt: bitpool 53"] if self.bt_addr else [])
         elif cmd == "msgs":
             return ([f"msg {i} {m}" for i, m in enumerate(self.msgs, 1) if i > int(arg)]
                     + [f"msgs next {len(self.msgs) + 1}"])
@@ -319,7 +330,38 @@ class Yp3Shell(Shell):
             return [f"mkcheck: {arg.split()[1]} files ok"]
         elif cmd == "count":
             return [f"count {arg}: 200"]
+        elif cmd == "bt":
+            return self.bt(arg.removeprefix("stack "))
+        elif line == "set bluetooth":
+            return ["bluetooth: on"]
+        elif cmd == "keys" and "S" in arg.split() and self.audio == 3:
+            self.audio = 1                  # the WPS resumes
         return []
+
+    def bt(self, line: str) -> list[str]:
+        """`bt stack ...`: a link to this PC needs both keys or its pairing agent"""
+        cmd, _, arg = line.partition(" ")
+        if cmd == "status":
+            status = (3 if self.audio == 1 else 2) if self.bt_addr else 1
+            return [f"bt stack: status {status} sink {int(bool(self.bt_addr))}, irq stack used "
+                    "968 of 2048"] + ([f"bt connected 0: {self.bt_addr} cod 000000"]
+                                      if self.bt_addr else [])
+        if cmd == "list":
+            return [f'bt paired 0: {PC} "pc"'] if self.bt_paired else []
+        if cmd == "forget":
+            self.bt_paired = False
+            if self.bt_addr == arg:
+                self.drop()
+        elif cmd == "disconnect":
+            self.drop()
+        elif cmd == "connect" and self.pc and self.pc.answers(self.bt_paired):
+            self.bt_addr, self.bt_paired = arg, True
+        return []
+
+    def drop(self) -> None:
+        self.bt_addr = None
+        if self.audio == 1:
+            self.audio = 3                  # the policy pauses
 
 
 @contextmanager
@@ -334,6 +376,89 @@ def yp3_run(root: Path) -> Generator[tuple[FakeYp3, yt.Yp3Torture]]:
             yield p, s
         finally:
             s.close()
+
+
+class FakePcLink(yt.PcLink):
+    """This PC's side in memory: BlueZ keeps the player's key until
+    remove(); with no key it takes a page only while its agent runs"""
+
+    def __init__(self, transport: str = "") -> None:
+        super().__init__(PLAYER, "arb_null", transport)
+        self.knows, self.agent_on, self.agents, self.reclaimed = True, False, 0, 0
+
+    def answers(self, player_paired: bool) -> bool:
+        ok = self.agent_on or (self.knows and player_paired)
+        self.knows |= ok
+        return ok
+
+    def find(self) -> bool:
+        self.adapter, self.path = PC, "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
+        return self.knows
+
+    def powered(self) -> bool:
+        return True
+
+    def others(self) -> list[str]:
+        return []
+
+    def connected(self) -> bool:
+        return False
+
+    def remove(self) -> None:
+        self.knows = False
+
+    @contextmanager
+    def agent(self, log: Path, discoverable: bool) -> Generator[None]:
+        self.agent_on, self.agents = True, self.agents + 1
+        try:
+            yield
+        finally:
+            self.agent_on = False
+
+    def reclaim(self, secs: float = 30) -> bool:
+        self.reclaimed += 1
+        return True
+
+    def start_routing(self) -> None:
+        pass
+
+    def stop_routing(self) -> None:
+        pass
+
+
+@contextmanager
+def yp3_bt_run(root: Path, transport: str = ""
+               ) -> Generator[tuple[FakeYp3, yt.Yp3Torture, FakePcLink]]:
+    """The YP3 suite on a fake YP3 linked to a fake PC"""
+    p = FakeYp3(Workspace(root, {"bluetooth": {"player": PLAYER}}))
+    s = yt.Yp3Torture(p, root / "rockbox.elf", seed=1)
+    pc = FakePcLink(transport)
+    s.pc = p.dev.pc = pc
+    s.features = frozenset({yt.BT_PC, yt.BT_BUMBLE} if transport else {yt.BT_PC})
+    p.dev.bt_addr = PC
+    with (fast(p.dev.clock), mock.patch.object(yt, "wait_rom",
+                                               lambda *a: None if p.up else object()),
+          mock.patch.object(yt.bluez, "trust")):
+        s.start(root)
+        try:
+            yield p, s, pc
+        finally:
+            s.close()
+
+
+def tone_wav(path: Path, seconds: float, gap: tuple[float, float] | None = None) -> None:
+    """TONE's loud part as this PC records it: 1 kHz left, 1.5 kHz right at
+    -15 dBFS; GAP (start s, length s) silent"""
+    rate = 44100
+    n = np.arange(int(seconds * rate)) / rate
+    x = np.stack([np.sin(2 * np.pi * hz * n) for hz in yt.TONE_HZ], axis=1) * 10 ** (-15 / 20)
+    if gap:
+        x[int(gap[0] * rate):int((gap[0] + gap[1]) * rate)] = 0
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes((x * 32767).astype("<i2").tobytes())
 
 
 def yp3_step(s: yt.Yp3Torture, name: str, seed: int = 1) -> list[str]:
@@ -358,6 +483,15 @@ def test_registered_for_yp3() -> None:
     assert {n: s.weight for n, s in table.items()} == YP3_WEIGHTS | BT_WEIGHTS
     assert all(table[n].needs == {yt.BT_PC} for n in BT_WEIGHTS)
     assert suite.pc and suite.pc.player == "AA:BB:CC:DD:EE:FF" and suite.pc.sink == "arb_null"
+    # and the adapter lent to a Bumble peer, with Bumble and the adapter's transport
+    bt = Workspace(Path("/nonexistent"), {"bluetooth": {"player": PLAYER,
+                                                        "adapter": "usb:10d7:b012"}})
+    for have, extra in ((False, {}), (True, BUMBLE_WEIGHTS)):
+        with mock.patch.object(yt, "have_bumble", return_value=have):
+            suite = yt.Yp3Torture(Yp3(bt), Path("x.elf"))
+        table = engine.scenarios_for(suite)
+        assert {n: s.weight for n, s in table.items()} == YP3_WEIGHTS | BT_WEIGHTS | extra
+    assert all(table[n].needs == {yt.BT_PC, yt.BT_BUMBLE} for n in BUMBLE_WEIGHTS)
     assert gen.suite_class("yp3") is yt.Yp3Torture
 
 
@@ -599,3 +733,85 @@ def test_simulated_leak() -> None:
     # ceiling of the last 8 (79000 at reading 14) is the first over 16 KiB below
     assert [x.step for x in failed] == [14]
     assert failed[0].problems[0].startswith("free memory ceiling 79000 B, 18000 B down")
+
+
+def test_bt_forget_and_pair_again() -> None:
+    """bt-forget: the player forgets this PC and pairs again through the
+    agent; a setup that finds both keys gone (a Bumble peer's step cut
+    short) pairs through it too"""
+    with tempfile.TemporaryDirectory() as tmp, yp3_bt_run(Path(tmp)) as (p, s, pc):
+        assert yp3_step(s, "bt-forget") == []
+        assert f"bt stack forget {PC}" in p.dev.sent and pc.agents == 1
+        assert p.dev.bt_paired and p.dev.bt_addr == PC
+        p.dev.bt_paired, pc.knows = False, False
+        p.dev.drop()
+        assert yp3_step(s, "bt-churn") == []
+        assert pc.agents == 2 and p.dev.bt_addr == PC
+        # nothing answers its page: the setup fails, both sides tried
+        p.dev.bt_paired, pc.knows = False, False
+        p.dev.drop()
+        with mock.patch.object(FakePcLink, "answers", return_value=False):
+            problems = yp3_step(s, "bt-churn")
+        assert len(problems) == 1 and problems[0].startswith(
+            "bt setup: no connection from either side within 25 s"), problems
+        assert "paired False" in problems[0] and pc.agents == 4
+
+
+def test_bt_capture() -> None:
+    """bt-capture: the tone's loud part as this PC records it"""
+    def record(gap: tuple[float, float] | None) -> Callable[[Path, str, float], None]:
+        def fake(wav: Path, sink: str, seconds: float) -> None:
+            assert sink == "arb_null" and yt.CAPTURE_S[0] <= seconds <= yt.CAPTURE_S[1]
+            tone_wav(wav, seconds, gap)
+        return fake
+
+    with tempfile.TemporaryDirectory() as tmp, yp3_bt_run(Path(tmp)) as (p, s, _):
+        with mock.patch.object(yt.pcsink, "record", record(None)):
+            assert yp3_step(s, "bt-capture") == []
+        assert f"play {yt.TONE}" in p.dev.sent
+        with mock.patch.object(yt.pcsink, "record", record((2.0, 0.03))):
+            problems = yp3_step(s, "bt-capture")
+        assert len(problems) == 1 and "1 dropouts (s, ms): [(2.0, 29)]" in problems[0], problems
+
+
+def test_capture_problems() -> None:
+    good = analysis.WavAnalysis(44100, 2, 5.0, [1000.2, 1499.0], [(1.0, 4.0)], [])
+    assert yt.capture_problems(good) == []
+    mono = analysis.WavAnalysis(44100, 2, 2.5, [1000.0, None], [(1.0, 12.0)], [])
+    assert yt.capture_problems(mono) == [
+        "channel 1: tone None Hz, want 1500", "only 2.5 s recorded",
+        "1 dropouts (s, ms): [(1.0, 12)]"]
+
+
+def test_hid_keys() -> None:
+    assert set(yt.HID_KEYS) <= set(keys_for("keyboard"))
+    assert set(yt.HID_KEYS + yt.HID_DS4_KEYS) <= set(keys_for("ds4"))
+    assert "a" not in yt.HID_KEYS + yt.HID_DS4_KEYS
+
+
+def test_bt_headset() -> None:
+    """bt-headset: the adapter lent (both keys gone), the cycles judged from
+    cycles.txt, the adapter back with BlueZ and the player paired again"""
+    if importlib.util.find_spec("bumble") is None:
+        raise Skip("needs Bumble (uv sync --extra bt)")
+    from auto_rockbox.btpeer import pcheadset  # noqa: PLC0415 (Bumble)
+
+    def cycles(opts: yt.HeadsetOptions, *, limit: float, echo: bool) -> None:
+        assert opts.adapter == "usb:10d7:b012" and opts.player == PLAYER and not echo
+        assert not p.dev.bt_paired and not pc.knows and p.dev.bt_addr is None
+        assert limit == opts.cycles * yt.HEADSET_CYCLE_S + yt.HEADSET_SPARE_S
+        opts.out.mkdir()
+        lines = [f"2026-11-05 12:00:0{n} cycle {n}: ok; page:0.5 media:2.1"
+                 for n in range(1, opts.cycles)]
+        lines.append(f"2026-11-05 12:00:09 cycle {opts.cycles}: stall at media; page:0.5; "
+                     "vanished")
+        (opts.out / "cycles.txt").write_text("\n".join(lines) + "\n")
+
+    with (tempfile.TemporaryDirectory() as tmp,
+          yp3_bt_run(Path(tmp), "usb:10d7:b012") as (p, s, pc),
+          mock.patch.object(pcheadset, "main", cycles)):
+        problems = yp3_step(s, "bt-headset")
+        assert len(problems) == 1 and problems[0].endswith(
+            " ok, 1 lost: cycle 7: stall at media; page:0.5; vanished"), problems
+        assert pc.reclaimed == 1 and pc.agents == 1 and p.dev.bt_paired and p.dev.bt_addr == PC
+        assert "repeat 1" in p.dev.sent and "repeat 0" in p.dev.sent

@@ -1,7 +1,7 @@
 """This PC's side of a Bluetooth link, through BlueZ's and PipeWire's own
 tools: whether a player is connected, paging it, its A2DP input node, moving
 its stream to a sink, the link's RSSI, and the capture (HCI trace and RSSI)
-of a player walk.
+of a player walk, and the adapter back from a Bumble peer.
 
 Stock players often cannot connect to a PC by themselves (the PC refuses
 their role switch) and do not page again after a drop, so the PC pages them:
@@ -18,10 +18,13 @@ import re
 import subprocess
 import time
 from collections.abc import Callable, Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
+
+import usb.core
 
 from . import rundir
 
@@ -221,6 +224,27 @@ def conn_info(addr: str) -> ConnInfo | None:
     """The PC's RSSI and TX power on its BR/EDR link to ADDR (root)"""
     r = _run(["btmgmt", "conn-info", "-t", "0", addr], 10)
     return parse_conn_info(r.stdout + r.stderr) if r else None
+
+
+def usb_ids(adapter: str) -> tuple[int, int] | None:
+    """VID and PID of a Bumble transport usb:VID:PID (hex); None for any other"""
+    m = re.fullmatch(r"usb:([0-9a-fA-F]{4}):([0-9a-fA-F]{4})", adapter)
+    return (int(m[1], 16), int(m[2], 16)) if m else None
+
+
+def give_back(adapter: str, reset: bool = False) -> None:
+    """ADAPTER (usb:VID:PID) back to its kernel driver, btusb: libusb does
+    this when Bumble closes the adapter, a killed peer does not. RESET: a
+    USB reset instead, so btusb probes it afresh (a wedged controller)."""
+    ids = usb_ids(adapter)
+    dev: Any = usb.core.find(idVendor=ids[0], idProduct=ids[1]) if ids else None
+    if dev is None:
+        return
+    with suppress(usb.core.USBError, NotImplementedError):
+        if reset:
+            dev.reset()
+        elif not dev.is_kernel_driver_active(0):
+            dev.attach_kernel_driver(0)
 
 
 def _hand_back(paths: list[Path]) -> None:
