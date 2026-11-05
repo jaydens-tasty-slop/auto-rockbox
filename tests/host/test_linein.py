@@ -127,6 +127,18 @@ class TestAnalysis(unittest.TestCase):
             assert early.dropouts == [] and early.problems == []
             assert linein.judge(r.heard, need=20).problems[0] == "tone seen in 13 s only"
 
+    def test_levels(self) -> None:
+        """A quiet clip's tone counts; a step-down 12 dB below it does not"""
+        quiet = 10 ** (-64 / 20)                  # about -67 dBFS RMS: under SILENT_DB
+        plan = [second(amp=quiet) for _ in range(6)] + [second(amp=quiet / 4)] * 3
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            publish_all(root, [(raw, T0 + timedelta(seconds=i))
+                               for i, raw in enumerate(plan, 1)])
+            heard = [linein.hear(s) for s in linein.history(root)]
+            assert heard[0].channels[0].db < linein.SILENT_DB
+            assert [h.second.seq for h in linein.judge(heard).tone] == list(range(1, 7))
+
     def test_mono_tone(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

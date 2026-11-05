@@ -54,6 +54,8 @@ TONE_TOLERANCE_HZ = 8.0
 SILENT_DB = -60.0           # a second this quiet (RMS, left) carries nothing
 CLEAN = 0.5                 # share of a channel's power in its tone for a clean tone
 DROPOUT_MS = 3              # more 1 ms windows than this low in a tone second: a dropout
+FULL_DB = 6.0               # a tone second this close to the loudest is at full level
+                            # (tone.wav's step-down at 10 s is 12 dB)
 MIN_HZ = 50.0               # below this a spectrum peak is hum or offset, not the signal
 LAST_DEFAULT = 60           # seconds a bare `arb linein analyse` looks at
 
@@ -441,9 +443,9 @@ class Heard:
         return self.channels[0].db >= SILENT_DB
 
     def is_tone(self, stereo: bool = True) -> bool:
-        """The test tone, clean on both channels; with STEREO false, either
-        tone on either channel"""
-        if not self.loud or min(c.purity for c in self.channels) < CLEAN:
+        """The test tone, clean on both channels (at any level); with STEREO
+        false, either tone on either channel"""
+        if min(c.purity for c in self.channels) < CLEAN:
             return False
         kind = tone_kind(self.channels[0].hz, self.channels[-1].hz)
         return kind == "stereo" if stereo else kind != "music"
@@ -484,11 +486,15 @@ class ToneCheck:
 
 def judge(heard: Sequence[Heard], *, need: int = 6, stereo: bool = True,
           span: int | None = None) -> ToneCheck:
-    """Tone seconds and the dropouts inside them. A second at either end of a
-    run of tone (consecutive sequence numbers) is partial, the tone starting
-    or stopping in it, so only whole ones count; with SPAN, only those among
+    """Tone seconds and the dropouts inside them. A tone second is clean and
+    within FULL_DB of the loudest (the step-down is not; clips are mastered
+    at different levels, so no fixed floor). A second at either end of a run
+    of tone (consecutive sequence numbers) is partial, the tone starting or
+    stopping in it, so only whole ones count; with SPAN, only those among
     the first SPAN tone seconds (what follows may be another file)."""
-    tone = [h for h in heard if h.is_tone(stereo)]
+    clean = [h for h in heard if h.is_tone(stereo)]
+    top = max((h.channels[0].db for h in clean), default=0.0)
+    tone = [h for h in clean if h.channels[0].db >= top - FULL_DB]
     seqs = {h.second.seq for h in tone}
     whole = [h for h in tone[:span]
              if h.second.seq - 1 in seqs and h.second.seq + 1 in seqs]

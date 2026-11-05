@@ -86,7 +86,8 @@ def tone_rows(stamps: list[str], first_low: int, last: tuple[float, float, int, 
     return rows
 
 
-# soak7 step 21 (`tone`): 11 tone seconds, two published in wall second :24
+# soak7 step 21 (`tone`): 11 seconds with tone (the last partial, 6.4 dB down), two published
+# in wall second :24
 TONE_021: list[Row] = [
     ("17:12:24.274", *QUIET), ("17:12:24.956", *QUIET),
     *tone_rows(["17:12:25.980", "17:12:27.004", "17:12:28.028", "17:12:29.052",
@@ -249,10 +250,10 @@ def test_registered_for_ts17_only() -> None:
 
 def test_line_in_samples() -> None:
     c = linein.judge(heard(TONE_021))
-    assert (c.note, c.problems) == ("11 tone s", [])
+    assert (c.note, c.problems) == ("10 tone s", [])
     # the old checker's false dropout: seconds told apart by number, not stamp
     c = linein.judge(heard(TONE_SOAK6))
-    assert (c.note, c.problems) == ("11 tone s", [])
+    assert (c.note, c.problems) == ("10 tone s", [])
     # a whole second with a gap is one
     rows = list(TONE_021)
     stamp, ldb, lhz, lpct, rdb, rhz, rpct, _ = rows[6]
@@ -262,7 +263,7 @@ def test_line_in_samples() -> None:
     # the next clip (mono, at the purity threshold) is no part of a stereo clip's tone
     span = soak.tone_span(entry("codecs/19_adx.adx", "stereo"))
     c = linein.judge(heard(CODEC_033), span=span)
-    assert (span, c.note, c.problems) == (9, "11 tone s", [])
+    assert (span, c.note, c.problems) == (9, "10 tone s", [])
 
 
 def test_tone_span() -> None:
@@ -347,7 +348,7 @@ def test_codec_steps() -> None:
             out = soak.codec(step(t, "codec", Pick(18)))
             assert t.requests[-1].keys == "9000 S 1500 D D D D D S 1500 S 1500 " + \
                 "D " * 18 + "S"
-            assert (out.note, out.problems) == ("19_adx.adx 11 tone s", [])
+            assert (out.note, out.problems) == ("19_adx.adx 10 tone s", [])
             assert line_in.calls == [{"need": 6, "stereo": True, "span": 9}]
             # soak7 step 3: a music clip is judged by its log alone (soak6 step
             # 27 misjudged it as a tone clip: "tone seen in 5 s only")
@@ -369,12 +370,12 @@ def test_video_steps() -> None:
             out = soak.video(step(t, "video", Pick(3)))     # soak7 step 7
             assert t.requests[-1].keys.startswith(
                 "9000 S 1500 D D D D D S 1500 D S 1500 D D D S 8000 S ")
-            assert (out.note, out.problems) == ("04_mjpeg.avi shown 499 drop 0 11 tone s", [])
+            assert (out.note, out.problems) == ("04_mjpeg.avi shown 499 drop 0 10 tone s", [])
             assert line_in.calls == [{"need": 5, "stereo": True, "span": 6}]
             out = soak.video(step(t, "video", Pick(1)))     # soak7 step 4
             assert t.requests[-1].keys.startswith(
                 "9000 S 1500 D D D D D S 1500 D S 1500 D S 3000 S 8000 S ")
-            assert (out.note, out.problems) == ("02_mpeg2.mpg 11 tone s", [])
+            assert (out.note, out.problems) == ("02_mpeg2.mpg 10 tone s", [])
             out = soak.video(step(t, "video", Pick(5)))     # soak7 step 14
             assert (out.note, out.problems, len(line_in.calls)) == (
                 "06_land_ima.avi shown 499 drop 0", [], 2)
