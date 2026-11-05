@@ -83,6 +83,12 @@ class Target(ABC):
     keys_max: ClassVar[int] = 239   # longest key script the run config holds
     capabilities: ClassVar[frozenset[str]] = frozenset()
     return_margin: ClassVar[float] = 40.0   # seconds past req.seconds before "lost"
+    # The log line a dev build writes when it returns on time: without it a
+    # return was a hang, reset or power-off (suites/soak.py)
+    return_line: ClassVar[str] = ""
+    # Log lines of this player's drivers that mean a failure, on top of
+    # Rockbox's own (a regex)
+    log_faults: ClassVar[str] = ""
 
     def __init__(self, ws: Workspace) -> None:
         self.ws = ws
