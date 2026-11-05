@@ -10,8 +10,7 @@ import numpy as np
 
 from .. import linein
 from ..publish import PublisherBusy
-from ..registry import Context, arg
-from ._group import Action, group
+from ..registry import Context, arg, command, group
 
 # How a command names Line In seconds; `arb audio` takes the same
 WINDOW_ARGS = [
@@ -79,16 +78,19 @@ def gaps(ctx: Context, args: Namespace) -> int:
     return 0
 
 
-group("linein", help="Line In: publish this PC's recording of a player, analyse it", actions={
-    "serve": Action(serve, "record and publish each second (a daemon)", [
-        arg("--list", action="store_true", help="list the recording sources and ports"),
-        arg("--source", help="pactl source name (default [linein] source, or the one "
-            "with a line port)"),
-        arg("--port", help="input port (default [linein] port, or its only line port)"),
-        arg("--history", type=int, help="seconds the ring keeps (default [linein] history, 300)"),
-        arg("--level-log", type=Path, metavar="CSV",
-            help="also append a level line per second (battery runs: arb bench end)"),
-    ]),
-    "analyse": Action(analyse, "level and tone per second", WINDOW_ARGS),
-    "gaps": Action(gaps, "dropouts per second", WINDOW_ARGS),
-})
+group("linein", help="Line In: publish this PC's recording of a player, analyse it")
+
+command("linein serve", target=False, help="record and publish each second (a daemon)", args=[
+    arg("--list", action="store_true", help="list the recording sources and ports"),
+    arg("--source", help="pactl source name (default [linein] source, or the one "
+        "with a line port)"),
+    arg("--port", help="input port (default [linein] port, or its only line port)"),
+    arg("--history", type=int, help="seconds the ring keeps (default [linein] history, 300)"),
+    arg("--level-log", type=Path, metavar="CSV",
+        help="also append a level line per second (battery runs: arb bench end)"),
+])(serve)
+
+command("linein analyse", target=False, help="level and tone per second", args=WINDOW_ARGS)(analyse)
+
+command("linein gaps", target=False, help="dropouts per second", args=WINDOW_ARGS)(gaps)
+

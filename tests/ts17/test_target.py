@@ -21,11 +21,11 @@ def test_registered_with_commands() -> None:
     importlib.import_module("auto_rockbox.commands")
     assert registry.targets()["ts17"] is Ts17
     cmds = registry.commands_for(Ts17)
-    for name in ("run", "log", "fb", "keys", "battery", "card-push", "nor", "reboot", "mem",
+    for name in ("run", "log", "fb", "keys", "battery", "card-push", "nor dump", "reboot", "mem",
                  "stock-adfu"):
         assert name in cmds, name
     assert "sh" not in cmds                 # no dev shell on this player
-    assert cmds["nor"].targets == frozenset({"ts17"})
+    assert cmds["nor dump"].targets == frozenset({"ts17"})
 
 
 def test_key_scripts() -> None:

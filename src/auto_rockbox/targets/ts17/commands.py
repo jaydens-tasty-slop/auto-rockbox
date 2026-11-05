@@ -3,16 +3,14 @@ resets, and the way back from stock firmware."""
 
 from __future__ import annotations
 
-import argparse
-import inspect
 import sys
 import time
 from argparse import Namespace
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from ...registry import Arg, Context, arg, command
+from ...registry import Context, arg, command, group
 from . import adfu, gadget, nor, power, rdm, stock
 from .gadget import Ops, Session
 
@@ -95,7 +93,8 @@ def nor_dump(ctx: Context, args: Namespace) -> None:
 def nor_restore(ctx: Context, args: Namespace) -> None:
     """Makes flash match a cell image (a `dump --raw`) at the same offsets:
     START to the image's end, or LENGTH bytes. Without IMAGE: stock's
-    fw0_sys from [targets.ts17] stock_cells."""
+    fw0_sys from [targets.ts17] stock_cells. Rewrites only the 4 KiB
+    sectors that differ, and verifies each."""
     image, start, length = args.image, args.start, args.length
     if image is None:
         image = ctx.t.conf.opt_path("stock_cells")
@@ -111,7 +110,8 @@ def nor_restore(ctx: Context, args: Namespace) -> None:
 
 def nor_program(ctx: Context, args: Namespace) -> None:
     """A plain file at START, encoded for XIP reads (the randomizer on); the
-    rest of its last sector is left erased."""
+    rest of its last sector is left erased. Rewrites only the 4 KiB sectors
+    that differ, and verifies each."""
     data = args.file.read_bytes()
     _write(ctx, args.start, nor.pad(rdm.encode(nor.pad(data, rdm.XIP_RUN)), nor.SECTOR),
            args.boot)
@@ -120,45 +120,25 @@ def nor_program(ctx: Context, args: Namespace) -> None:
 WINDOW_ARGS = [arg("--raw", action="store_true", help="the stored cells (randomizer off)"),
                arg("--crypt", action="store_true", help="set the remap's crypt bit (31)")]
 BOOT_ARG = arg("--boot", action="store_true", help="allow the boot sectors below 0x4000")
-NOR_ACTIONS: dict[str, tuple[Callable[[Context, Namespace], None], str, list[Arg]]] = {
-    "ident": (nor_ident, "CPU, NOR controller, cache, remap and watchdog registers", []),
-    "map": (nor_map, "64 bytes at a NOR offset",
-            [arg("offset", type=number), *WINDOW_ARGS]),
-    "dump": (nor_dump, "NOR to a file",
-             [arg("file", type=Path), arg("start", type=number), arg("length", type=number),
-              *WINDOW_ARGS]),
-    "restore": (nor_restore, "write back a --raw dump (changed sectors only)",
-                [arg("image", type=Path, nargs="?"),
-                 arg("start", type=number, nargs="?", default=0),
-                 arg("length", type=number, nargs="?"), BOOT_ARG]),
-    "program": (nor_program, "write a plain file, encoded for XIP",
-                [arg("file", type=Path), arg("start", type=number), BOOT_ARG]),
-}
+TS17 = {"ts17"}
+
+group("nor", help="the NOR flash: ident, map, dump, restore, program")
+command("nor ident", target=TS17,
+        help="CPU, NOR controller, cache, remap and watchdog registers")(nor_ident)
+command("nor map", target=TS17, help="64 bytes at a NOR offset",
+        args=[arg("offset", type=number), *WINDOW_ARGS])(nor_map)
+command("nor dump", target=TS17, help="NOR to a file",
+        args=[arg("file", type=Path), arg("start", type=number), arg("length", type=number),
+              *WINDOW_ARGS])(nor_dump)
+command("nor restore", target=TS17, help="write back a --raw dump (changed sectors only)",
+        args=[arg("image", type=Path, nargs="?"),
+              arg("start", type=number, nargs="?", default=0),
+              arg("length", type=number, nargs="?"), BOOT_ARG])(nor_restore)
+command("nor program", target=TS17, help="write a plain file, encoded for XIP",
+        args=[arg("file", type=Path), arg("start", type=number), BOOT_ARG])(nor_program)
 
 
-def nor_cmd(ctx: Context, args: Namespace) -> int:
-    fn, help_, fargs = NOR_ACTIONS[args.action]
-    p = argparse.ArgumentParser(prog=f"arb ts17 nor {args.action}",
-                                description=inspect.cleandoc(fn.__doc__ or help_),
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    for a in fargs:
-        p.add_argument(*a.flags, **a.kwargs)
-    fn(ctx, p.parse_args(args.argv))
-    return 0
-
-
-# TODO(cleanup): commands/_group.group does this for host commands; use it
-# once it takes target= (it hard-codes target=False and the prog name)
-nor_cmd.__doc__ = ("Writes rewrite only the 4 KiB sectors that differ, and verify each.\n\n"
-                   "actions (ACTION --help for each one's arguments):\n" + "\n".join(
-                       f"  {k:8} {h}" for k, (_, h, _) in NOR_ACTIONS.items()))
-command("nor", target={"ts17"}, help="the NOR flash: ident, map, dump, restore, program", args=[
-    arg("action", choices=list(NOR_ACTIONS), metavar="ACTION"),
-    arg("argv", nargs=argparse.REMAINDER, help=argparse.SUPPRESS),
-])(nor_cmd)
-
-
-@command("reboot", target={"ts17"}, help="reset into download mode, or into stock firmware",
+@command("reboot", target=TS17, help="reset into download mode, or into stock firmware",
          args=[arg("--stock", action="store_true",
                    help="clear the boot-mode magic: boots stock (or whatever is at fw0_sys)")])
 def reboot(ctx: Context, args: Namespace) -> int:
@@ -170,7 +150,7 @@ def reboot(ctx: Context, args: Namespace) -> int:
     return 0
 
 
-@command("mem", target={"ts17"}, help="read the player's memory into a file", args=[
+@command("mem", target=TS17, help="read the player's memory into a file", args=[
     arg("addr", type=number), arg("size", type=number), arg("file", type=Path)])
 def mem(ctx: Context, args: Namespace) -> int:
     """Plain ROM reads: no gadget runs, so RAM is as the last run left it
@@ -182,7 +162,7 @@ def mem(ctx: Context, args: Namespace) -> int:
     return 0
 
 
-@command("stock-adfu", target={"ts17"}, help="stock firmware's USB disk into download mode")
+@command("stock-adfu", target=TS17, help="stock firmware's USB disk into download mode")
 def stock_adfu(ctx: Context, args: Namespace) -> int:
     """Needed when a reset booted stock: it has no hook to return by itself."""
     with ctx.t.lock():

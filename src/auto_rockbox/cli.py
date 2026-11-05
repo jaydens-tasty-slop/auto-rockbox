@@ -18,9 +18,20 @@ from .errors import ArbError
 from .registry import Command, Context
 from .workspace import ConfigError, Workspace
 
+type Subparsers = argparse._SubParsersAction[argparse.ArgumentParser]
 
-def _add(sub: argparse._SubParsersAction[argparse.ArgumentParser], c: Command) -> None:
-    p = sub.add_parser(c.name, help=c.help, description=c.description or c.help,
+
+def _add(sub: Subparsers, groups: dict[str, Subparsers], c: Command) -> None:
+    """C's parser under SUB, or under its group's (made on first use)"""
+    name = c.name
+    if " " in name:
+        g, name = name.split(" ", 1)
+        if g not in groups:
+            h = registry.group_help(g)
+            gp = sub.add_parser(g, help=h, description=h)
+            groups[g] = gp.add_subparsers(dest="_action", metavar="ACTION", required=True)
+        sub = groups[g]
+    p = sub.add_parser(name, help=c.help, description=c.description or c.help,
                        formatter_class=argparse.RawDescriptionHelpFormatter)
     for a in c.args:
         p.add_argument(*a.flags, **a.kwargs)
@@ -33,14 +44,16 @@ def parser(ws: Workspace) -> argparse.ArgumentParser:
     ap.add_argument("--workspace", type=Path, help="the port's checkout (default: found "
                     "from the current directory by its auto-rockbox.toml)")
     top = ap.add_subparsers(dest="_top", metavar="TARGET|COMMAND", required=True)
+    groups: dict[str, Subparsers] = {}
     for c in registry.host_commands().values():
-        _add(top, c)
+        _add(top, groups, c)
     for name, cls in registry.targets().items():
         tp = top.add_parser(name, help=cls.summary, description=cls.summary)
         tp.set_defaults(_target=cls)
         sub = tp.add_subparsers(dest="_cmd", metavar="COMMAND", required=True)
+        groups = {}
         for c in registry.commands_for(cls).values():
-            _add(sub, c)
+            _add(sub, groups, c)
     return ap
 
 

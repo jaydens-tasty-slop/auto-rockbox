@@ -20,8 +20,7 @@ from ..audioq.eq import fit_preset
 from ..audioq.pipeline import analyse_to, volsteps_to
 from ..audioq.signal import SIGNAL_NAME, load_timeline, write_signal
 from ..linein import Second
-from ..registry import CommandFn, Context, arg
-from ._group import Action, group
+from ..registry import CommandFn, Context, arg, command, group
 from .linein import WINDOW_ARGS, selected
 
 
@@ -201,45 +200,51 @@ _SOURCE = [
     arg("--wav", type=Path, metavar="FILE", help="a WAV or FLAC recording instead"),
 ]
 
-group("audio", help="audio quality against a reference device: signal, analysis, EQ fit",
-      actions={
-    "signal": Action(_guarded(signal), "write the test signal", [
-        arg("out", type=Path, nargs="?", help="directory (default OUT/signal)"),
-    ]),
-    "analyze": Action(_guarded(analyze), "analyse one pass of the signal", [
-        arg("label", help="the run's name, e.g. reference, before, after"),
-        *_SOURCE,
-        arg("--timeline", type=Path, help="the signal's test_signal.json "
-            "(default OUT/signal/test_signal.json, else this version's)"),
-        arg("-o", "--out", type=Path, help="output directory (default OUT/LABEL)"),
-        arg("--volsteps", action="store_true", help="a volume-step run (signal volsteps_16)"),
-        arg("--volumes", type=_floats, metavar="V,V,...",
-            help="--volsteps: the volume settings, labelling the plateaus in order"),
-    ]),
-    "compare": Action(_guarded(compare), "overlay results in graphs", [
-        arg("inputs", nargs="*", type=_labelled, metavar="LABEL=result.json"),
-        arg("-o", "--out", type=Path, required=True),
-        arg("--predict", type=_labelled, metavar="LABEL=preset.cfg"),
-        arg("--channel", default="avg", choices=["avg", "L", "R"]),
-        arg("--sweep", default="12", choices=["12", "3"], help="the sweep's level, -dBFS"),
-        arg("--volsteps", nargs="*", type=_labelled, metavar="LABEL=volsteps.json"),
-    ]),
-    "fit-eq": Action(_guarded(fit_eq), "fit an EQ preset to match the reference", [
-        arg("ref", type=Path, metavar="REF.json"),
-        arg("dev", type=Path, metavar="DEV.json"),
-        arg("-o", "--out", type=Path, help="the preset (default OUT/preset.cfg)"),
-        arg("--max-boost", type=float, default=6.0, help="dB (default 6)"),
-        arg("--fmin", type=float, default=25.0, help="Hz (default 25)"),
-        arg("--fmax", type=float, default=18000.0, help="Hz (default 18000)"),
-        arg("--channel", default="avg", choices=["avg", "L", "R"]),
-        arg("--plot", type=Path, metavar="PNG", help="also draw the fit"),
-    ]),
-    "slips": Action(_guarded(slips), "find sample slips (clicks) in a steady tone", [
-        *_SOURCE,
-        arg("--f0", type=float, default=1000.0,
-            help="the tone's frequency at the player (default 1000 Hz)"),
-    ]),
-    "selftest": Action(_guarded(selftest), "simulate a reference and a device, check it all", [
-        arg("-o", "--out", type=Path, help="output directory (default OUT/selftest)"),
-    ]),
-})
+group("audio", help="audio quality against a reference device: signal, analysis, EQ fit")
+
+command("audio signal", target=False, help="write the test signal", args=[
+    arg("out", type=Path, nargs="?", help="directory (default OUT/signal)"),
+])(_guarded(signal))
+
+command("audio analyze", target=False, help="analyse one pass of the signal", args=[
+    arg("label", help="the run's name, e.g. reference, before, after"),
+    *_SOURCE,
+    arg("--timeline", type=Path, help="the signal's test_signal.json "
+        "(default OUT/signal/test_signal.json, else this version's)"),
+    arg("-o", "--out", type=Path, help="output directory (default OUT/LABEL)"),
+    arg("--volsteps", action="store_true", help="a volume-step run (signal volsteps_16)"),
+    arg("--volumes", type=_floats, metavar="V,V,...",
+        help="--volsteps: the volume settings, labelling the plateaus in order"),
+])(_guarded(analyze))
+
+command("audio compare", target=False, help="overlay results in graphs", args=[
+    arg("inputs", nargs="*", type=_labelled, metavar="LABEL=result.json"),
+    arg("-o", "--out", type=Path, required=True),
+    arg("--predict", type=_labelled, metavar="LABEL=preset.cfg"),
+    arg("--channel", default="avg", choices=["avg", "L", "R"]),
+    arg("--sweep", default="12", choices=["12", "3"], help="the sweep's level, -dBFS"),
+    arg("--volsteps", nargs="*", type=_labelled, metavar="LABEL=volsteps.json"),
+])(_guarded(compare))
+
+command("audio fit-eq", target=False, help="fit an EQ preset to match the reference", args=[
+    arg("ref", type=Path, metavar="REF.json"),
+    arg("dev", type=Path, metavar="DEV.json"),
+    arg("-o", "--out", type=Path, help="the preset (default OUT/preset.cfg)"),
+    arg("--max-boost", type=float, default=6.0, help="dB (default 6)"),
+    arg("--fmin", type=float, default=25.0, help="Hz (default 25)"),
+    arg("--fmax", type=float, default=18000.0, help="Hz (default 18000)"),
+    arg("--channel", default="avg", choices=["avg", "L", "R"]),
+    arg("--plot", type=Path, metavar="PNG", help="also draw the fit"),
+])(_guarded(fit_eq))
+
+command("audio slips", target=False, help="find sample slips (clicks) in a steady tone", args=[
+    *_SOURCE,
+    arg("--f0", type=float, default=1000.0,
+        help="the tone's frequency at the player (default 1000 Hz)"),
+])(_guarded(slips))
+
+command("audio selftest", target=False,
+        help="simulate a reference and a device, check it all",
+        args=[arg("-o", "--out", type=Path, help="output directory (default OUT/selftest)")],
+        )(_guarded(selftest))
+

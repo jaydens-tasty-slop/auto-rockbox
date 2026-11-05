@@ -8,8 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import bench, linein
-from ..registry import Context, arg
-from ._group import Action, group
+from ..registry import Context, arg, command, group
 
 
 def _utc(text: str) -> datetime:
@@ -81,30 +80,33 @@ def curve(ctx: Context, args: Namespace) -> int:
     return 0
 
 
-group("bench", help="battery runs: level log, run end, Bluetooth watch, discharge table",
-      actions={
-    "level-log": Action(level_log, "log a source's level each second", [
-        arg("source", help="pactl source, e.g. arb_null.monitor"),
-        arg("log", type=Path),
-        arg("--rate", type=int, default=bench.A2DP_RATE, help="sample rate (default 44100)"),
-    ]),
-    "end": Action(end, "has the run ended? (from a level log)", [
-        arg("log", type=Path),
-        arg("t0", help="the run's start, UTC ISO"),
-        arg("--quiet", type=int, default=300, metavar="S",
-            help="silent seconds that end it (default 300)"),
-    ]),
-    "bt-watch": Action(bt_watch, "watch a Bluetooth run's link", [
-        arg("addr", help="the player's Bluetooth address"),
-        arg("log", type=Path),
-        arg("--sink", help="null sink for its stream (default [bench] sink, arb_null)"),
-    ]),
-    "curve": Action(curve, "discharge table from a battery log", [
-        arg("battlog", type=Path),
-        arg("--from-mv", type=float, metavar="MV", help="t0 where the reading falls to MV"),
-        arg("--start", metavar="ISO", help="the run's start (host clock)"),
-        arg("--end", metavar="ISO", help="the run's end (host clock): the power-off"),
-        arg("--window", type=float, default=bench.CURVE_WINDOW_S, metavar="S",
-            help="median window, +-S s (default 120)"),
-    ]),
-})
+group("bench", help="battery runs: level log, run end, Bluetooth watch, discharge table")
+
+command("bench level-log", target=False, help="log a source's level each second", args=[
+    arg("source", help="pactl source, e.g. arb_null.monitor"),
+    arg("log", type=Path),
+    arg("--rate", type=int, default=bench.A2DP_RATE, help="sample rate (default 44100)"),
+])(level_log)
+
+command("bench end", target=False, help="has the run ended? (from a level log)", args=[
+    arg("log", type=Path),
+    arg("t0", help="the run's start, UTC ISO"),
+    arg("--quiet", type=int, default=300, metavar="S",
+        help="silent seconds that end it (default 300)"),
+])(end)
+
+command("bench bt-watch", target=False, help="watch a Bluetooth run's link", args=[
+    arg("addr", help="the player's Bluetooth address"),
+    arg("log", type=Path),
+    arg("--sink", help="null sink for its stream (default [bench] sink, arb_null)"),
+])(bt_watch)
+
+command("bench curve", target=False, help="discharge table from a battery log", args=[
+    arg("battlog", type=Path),
+    arg("--from-mv", type=float, metavar="MV", help="t0 where the reading falls to MV"),
+    arg("--start", metavar="ISO", help="the run's start (host clock)"),
+    arg("--end", metavar="ISO", help="the run's end (host clock): the power-off"),
+    arg("--window", type=float, default=bench.CURVE_WINDOW_S, metavar="S",
+        help="median window, +-S s (default 120)"),
+])(curve)
+

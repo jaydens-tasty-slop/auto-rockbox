@@ -12,6 +12,12 @@ A command is a function registered with `@command`:
 
     @command("media", help="...", target=False)           # host only: `arb media`
 
+A command group has actions, each a command of its own with its own
+arguments: `arb [TARGET] NAME ACTION ...`.
+
+    group("nor", help="the NOR flash")
+    @command("nor dump", help="NOR to a file", target={"ts17"}, args=[...])
+
 A player's command overrides a generic one of the same name for that player.
 `needs` names target capabilities (`Target.capabilities`); a command is only
 offered to targets that have them all.
@@ -92,6 +98,7 @@ class Command:
 
 _commands: list[Command] = []
 _targets: dict[str, type[Target]] = {}
+_groups: dict[str, str] = {}
 
 
 def command(name: str | None = None, *, help: str, args: Iterable[Arg] = (),
@@ -105,6 +112,16 @@ def command(name: str | None = None, *, help: str, args: Iterable[Arg] = (),
                                  frozenset(needs), inspect.cleandoc(fn.__doc__ or "")))
         return fn
     return register
+
+
+def group(name: str, *, help: str) -> None:
+    """Declares the command group NAME: the commands named "NAME ACTION" are
+    its actions"""
+    _groups[name] = help
+
+
+def group_help(name: str) -> str:
+    return _groups.get(name, "")
 
 
 def register_target[T: type[Target]](cls: T) -> T:

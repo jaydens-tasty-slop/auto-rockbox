@@ -9,8 +9,7 @@ from pathlib import Path
 
 from .. import webcam
 from ..publish import PublisherBusy
-from ..registry import Context, arg
-from ._group import Action, group
+from ..registry import Context, arg, command, group
 
 
 def serve(ctx: Context, args: Namespace) -> int:
@@ -55,19 +54,21 @@ def focus(ctx: Context, args: Namespace) -> int:
     return 0
 
 
-group("webcam", help="the bench camera: publish a frame a second, set its focus", actions={
-    "serve": Action(serve, "publish frames (a daemon)", [
-        arg("--device", help="V4L2 device (default [webcam] device, /dev/video0)"),
-        arg("--size", help="WIDTHxHEIGHT (default [webcam] size, 1280x720)"),
-        arg("--focus", metavar="N|auto",
-            help=f"focus_absolute (default [webcam] focus, {webcam.DEFAULT_FOCUS})"),
-        arg("--history", type=int, metavar="FRAMES",
-            help="frames kept in history/ (default [webcam] history, 0)"),
-    ]),
-    "focus": Action(focus, "read or set the focus, or sweep it", [
-        arg("value", nargs="?", metavar="N|auto"),
-        arg("--device", help="V4L2 device (default [webcam] device)"),
-        arg("--sweep", action="store_true", help="save frames at several focus settings"),
-        arg("--out", type=Path, help="where --sweep saves (default focus/ beside latest)"),
-    ]),
-})
+group("webcam", help="the bench camera: publish a frame a second, set its focus")
+
+command("webcam serve", target=False, help="publish frames (a daemon)", args=[
+    arg("--device", help="V4L2 device (default [webcam] device, /dev/video0)"),
+    arg("--size", help="WIDTHxHEIGHT (default [webcam] size, 1280x720)"),
+    arg("--focus", metavar="N|auto",
+        help=f"focus_absolute (default [webcam] focus, {webcam.DEFAULT_FOCUS})"),
+    arg("--history", type=int, metavar="FRAMES",
+        help="frames kept in history/ (default [webcam] history, 0)"),
+])(serve)
+
+command("webcam focus", target=False, help="read or set the focus, or sweep it", args=[
+    arg("value", nargs="?", metavar="N|auto"),
+    arg("--device", help="V4L2 device (default [webcam] device)"),
+    arg("--sweep", action="store_true", help="save frames at several focus settings"),
+    arg("--out", type=Path, help="where --sweep saves (default focus/ beside latest)"),
+])(focus)
+
