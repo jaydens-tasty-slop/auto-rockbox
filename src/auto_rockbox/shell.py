@@ -13,6 +13,7 @@ import tty
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import TracebackType
 
 from .errors import ArbError
 from .lock import DeviceLock
@@ -34,6 +35,25 @@ def find_tty(vid: str, pid: str) -> str | None:
 
 class NoShell(ArbError):
     pass
+
+
+class SessionLost(ArbError):
+    """The serial port went away (USB unplugged, the player reset)"""
+
+
+def open_raw(port: str) -> int:
+    """PORT opened raw, its queued input dropped. A new ttyACM (the player
+    just booted) opens cooked, and log lines the player had queued can be
+    echoed back to its shell before the port is raw: a partial line there
+    would prefix the next command, so it gets a newline to end it (its
+    "err" is read and dropped with the rest)."""
+    fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+    fresh = termios.tcgetattr(fd)[3] & termios.ECHO
+    tty.setraw(fd)
+    termios.tcflush(fd, termios.TCIOFLUSH)
+    if fresh:
+        os.write(fd, b"\n")
+    return fd
 
 
 @dataclass
@@ -64,11 +84,19 @@ class Shell:
                           "(is the dev build running with USB on?)")
         return p
 
+    def lock(self) -> DeviceLock:
+        return DeviceLock(f"{self.name}-shell", file=self.lock_file)
+
+    def hold(self) -> Session:
+        """The port held open (with the shell's lock) for a conversation that
+        reads everything the player sends: `with shell.hold() as s: ...`"""
+        return Session(self)
+
     def __call__(self, line: str, timeout: float = 120.0,
                  echo: Callable[[str], None] | None = None) -> Reply:
         """Send LINE; the reply's lines, each also passed to ECHO as it comes"""
-        with DeviceLock(f"{self.name}-shell", file=self.lock_file):
-            fd = os.open(self.port(), os.O_RDWR | os.O_NOCTTY)
+        with self.lock():
+            fd = open_raw(self.port())
             try:
                 return self._talk(fd, line, timeout, echo)
             finally:
@@ -76,15 +104,6 @@ class Shell:
 
     def _talk(self, fd: int, line: str, timeout: float,
               echo: Callable[[str], None] | None) -> Reply:
-        # A new ttyACM (the player just booted) opens cooked, and log lines
-        # the player had queued can be echoed back to its shell before the
-        # port is raw: a partial line there would prefix this command. End
-        # it with a newline; its "err" goes with the drain below.
-        fresh = termios.tcgetattr(fd)[3] & termios.ECHO
-        tty.setraw(fd)
-        termios.tcflush(fd, termios.TCIOFLUSH)
-        if fresh:
-            os.write(fd, b"\n")
         # Output left from an earlier command (one that timed out) stays
         # queued in the player until read: its "ok" would end this reply
         while select.select([fd], [], [], 0.3)[0]:
@@ -111,3 +130,72 @@ class Shell:
             reply.lines.append(buf.decode(errors="replace"))
         reply.timed_out = True
         return reply
+
+
+class Session:
+    """The dev shell's serial port held open: commands go out one at a time
+    and everything the player sends comes back, replies and mirrored log
+    lines alike. (A Shell call opens the port per command and drops what
+    came in between.) Holds the shell's lock throughout."""
+
+    def __init__(self, shell: Shell) -> None:
+        self.shell = shell
+        self.fd: int | None = None
+        self._lock = shell.lock()
+        self._buf = b""
+
+    def __enter__(self) -> Session:
+        self._lock.__enter__()
+        try:
+            self._open()
+        except BaseException:
+            self._lock.__exit__(None, None, None)
+            raise
+        return self
+
+    def __exit__(self, et: type[BaseException] | None, ev: BaseException | None,
+                 tb: TracebackType | None) -> None:
+        self._close()
+        self._lock.__exit__(et, ev, tb)
+
+    def _open(self) -> None:
+        self.fd, self._buf = open_raw(self.shell.port()), b""
+
+    def _close(self) -> None:
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+    def reopen(self) -> bool:
+        """True once the port is back"""
+        self._close()
+        try:
+            self._open()
+        except (NoShell, OSError):
+            return False
+        return True
+
+    def send(self, line: str) -> None:
+        if self.fd is None:
+            raise SessionLost("port closed")
+        try:
+            os.write(self.fd, line.encode() + b"\n")
+        except OSError as e:
+            raise SessionLost(str(e)) from e
+
+    def read(self, timeout: float) -> list[str]:
+        if self.fd is None:
+            raise SessionLost("port closed")
+        try:
+            if not select.select([self.fd], [], [], timeout)[0]:
+                return []
+            data = os.read(self.fd, 4096)
+        except OSError as e:
+            raise SessionLost(str(e)) from e
+        if not data:
+            raise SessionLost("end of file")
+        *done, self._buf = (self._buf + data).split(b"\n")
+        lines = [d.decode(errors="replace").rstrip("\r") for d in done]
+        if self.shell.annotate:
+            lines = [self.shell.annotate(x) for x in lines]
+        return [x for x in lines if x]

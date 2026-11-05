@@ -14,21 +14,15 @@ are only in the player's ring and card log.
 
 from __future__ import annotations
 
-import os
 import re
-import select
-import termios
 import time
-import tty
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
 from typing import Protocol
 
-from ..lock import DeviceLock
-from ..shell import NoShell, Shell
+from ..shell import SessionLost, Shell
 from . import rundir
 
 # The dev shell commands a walk sends, and what their replies start with
@@ -47,89 +41,10 @@ _AUDIO = re.compile(r"audio (\d+) elapsed")
 _DEVICE = re.compile(r"bt connected \d+: ")
 
 
-class SessionLost(Exception):
-    """The serial port went away (USB unplugged, the player reset)"""
-
-
 class Session(Protocol):
     def send(self, line: str) -> None: ...
     def read(self, timeout: float) -> list[str]: ...
     def reopen(self) -> bool: ...
-
-
-class SerialSession:
-    """The dev shell's serial port held open for a whole walk: commands go
-    out one at a time and everything the player sends comes back, replies
-    and mirrored log lines alike. (Shell opens the port per command and
-    drops what came in between.) Holds the shell's lock throughout."""
-
-    def __init__(self, shell: Shell) -> None:
-        self.shell = shell
-        self.fd: int | None = None
-        self._lock = DeviceLock(f"{shell.name}-shell")
-        self._buf = b""
-
-    def __enter__(self) -> SerialSession:
-        self._lock.__enter__()
-        try:
-            self._open()
-        except BaseException:
-            self._lock.__exit__(None, None, None)
-            raise
-        return self
-
-    def __exit__(self, et: type[BaseException] | None, ev: BaseException | None,
-                 tb: TracebackType | None) -> None:
-        self._close()
-        self._lock.__exit__(et, ev, tb)
-
-    def _open(self) -> None:
-        fd = os.open(self.shell.port(), os.O_RDWR | os.O_NOCTTY)
-        fresh = termios.tcgetattr(fd)[3] & termios.ECHO
-        tty.setraw(fd)
-        termios.tcflush(fd, termios.TCIOFLUSH)
-        if fresh:               # end a partial line echoed before raw mode (see Shell)
-            os.write(fd, b"\n")
-        self.fd, self._buf = fd, b""
-
-    def _close(self) -> None:
-        if self.fd is not None:
-            os.close(self.fd)
-            self.fd = None
-
-    def reopen(self) -> bool:
-        """True once the port is back"""
-        self._close()
-        try:
-            self._open()
-        except (NoShell, OSError):
-            return False
-        return True
-
-    def send(self, line: str) -> None:
-        if self.fd is None:
-            raise SessionLost("port closed")
-        try:
-            os.write(self.fd, line.encode() + b"\n")
-        except OSError as e:
-            raise SessionLost(str(e)) from e
-
-    def read(self, timeout: float) -> list[str]:
-        if self.fd is None:
-            raise SessionLost("port closed")
-        try:
-            if not select.select([self.fd], [], [], timeout)[0]:
-                return []
-            data = os.read(self.fd, 4096)
-        except OSError as e:
-            raise SessionLost(str(e)) from e
-        if not data:
-            raise SessionLost("end of file")
-        *done, self._buf = (self._buf + data).split(b"\n")
-        lines = [d.decode(errors="replace").rstrip("\r") for d in done]
-        if self.shell.annotate:
-            lines = [self.shell.annotate(x) for x in lines]
-        return [x for x in lines if x]
 
 
 @dataclass
@@ -239,6 +154,6 @@ class Walk:
 def walk(shell: Shell, out: Path, minutes: float, link_period: float = 5.0,
          echo: Callable[[str], object] | None = print) -> str:
     """The headset walk into OUT/walk.txt; how it ended"""
-    with rundir.Log(out / rundir.WALK, echo) as log, SerialSession(shell) as session:
+    with rundir.Log(out / rundir.WALK, echo) as log, shell.hold() as session:
         log.comment(f"headset walk: up to {minutes:g} min, {LINK!r} every {link_period:g} s")
         return Walk(log, minutes * 60, link_period).run(session)
