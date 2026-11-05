@@ -21,7 +21,7 @@ from typing import cast
 from .. import engine
 from ..engine import Outcome, StepContext, Suite
 from ..registry import Context, arg, command
-from ..run import run
+from ..run import parse_settings, run
 from ..target import RunRequest, Target
 
 # Rockbox's own log lines that mean a failure, whatever the player
@@ -34,10 +34,12 @@ FAULTS = (r"PANIC|\bfault\b|stkov|Undefined|\babort|keys: bad token|"
 class SoakSuite(Suite):
     name = "soak"
 
-    def __init__(self, target: Target, image: Path, shots: bool) -> None:
+    def __init__(self, target: Target, image: Path, shots: bool,
+                 settings: dict[str, str] | None = None) -> None:
         super().__init__(target)
         self.image = image
         self.shots = shots
+        self.settings = settings or {}  # every boot's, under the step's own
         extra = target.log_faults
         self.faults = re.compile(FAULTS + (f"|{extra}" if extra else ""), re.I)
 
@@ -62,7 +64,7 @@ def boot(step: StepContext, seconds: int, keys: str = "", *, settings: dict[str,
     return (no `return_line`), failure lines, lines EXPECT names missing"""
     s = suite(step)
     t = step.target
-    req = RunRequest(s.image, seconds, keys, settings or {}, cold, usb)
+    req = RunRequest(s.image, seconds, keys, {**s.settings, **(settings or {})}, cold, usb)
     shots = step.out / "shots" / f"{step.index:03d}" if s.shots else None
     t0 = datetime.now(UTC)
     r = run(t, req, shots)
@@ -87,9 +89,12 @@ def boot(step: StepContext, seconds: int, keys: str = "", *, settings: dict[str,
              arg("--seed", type=int),
              arg("--shots", action="store_true",
                  help="a contact sheet (framebuffer + webcam) per step"),
+             arg("--set", dest="settings", action="append", default=[], metavar="KEY=VALUE",
+                 help="a run setting for every boot, as `run --set` (e.g. a fixed volume, "
+                 "so that no step's keys carry a volume change into the next)"),
          ])
 def soak_cmd(ctx: Context, args: Namespace) -> int:
-    s = SoakSuite(ctx.t, args.image, args.shots)
+    s = SoakSuite(ctx.t, args.image, args.shots, parse_settings(args.settings))
     seed = args.seed if args.seed is not None else int(datetime.now().timestamp())
     weights = {k: int(v) for k, _, v in (w.partition("=") for w in args.weights.split(",") if w)}
     steps = engine.run(s, engine.RunSettings(

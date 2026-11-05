@@ -57,7 +57,8 @@ class Ts17(Target):
                      auto-rockbox-ts17.lock); "ts17dev.lock" makes arb and
                      ts17dev exclude each other
 
-    Run settings (--set): trace=1 logs a thread dump before the return.
+    Run settings (--set): trace=1 logs a thread dump before the return;
+    volume=DB sets the volume at boot (and so keeps it from step to step).
     """
 
     name = "ts17"
@@ -86,13 +87,13 @@ class Ts17(Target):
         return out.read_bytes()
 
     def before_run(self, req: RunRequest) -> None:
-        devblock.run_flags(req.settings, req.usb)   # bad settings fail before the player is touched
+        devblock.run_options(req.settings, req.usb)  # bad settings fail before any device call
         with gadget.connect(self.ws) as s:
             _note(power.guard(s).describe())
 
     def launch(self, req: RunRequest) -> None:
-        flags = devblock.run_flags(req.settings, req.usb)
-        config = devblock.run_config(req.seconds, flags, req.keys)
+        config = devblock.run_config(req.seconds, devblock.run_options(req.settings, req.usb),
+                                     req.keys)
         data = self._flat(req.image)
         sp, reset = struct.unpack_from("<II", data)
         if not nor.XIP_BASE <= reset - 1 < nor.XIP_BASE + len(data):

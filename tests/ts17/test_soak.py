@@ -412,7 +412,8 @@ def test_simulated_run() -> None:
                 s.deadline = datetime.now()
 
         with mock.patch.object(linein, "tone_check", LineIn(TONE_021)):
-            steps = engine.run(SoakSuite(t, root / "rockbox.elf", shots=False), s, echo)
+            steps = engine.run(SoakSuite(t, root / "rockbox.elf", shots=False,
+                                         settings={"volume": "-25"}), s, echo)
         assert len(steps) == n, lines
         assert all(x.ok for x in steps), "\n".join(lines)
         assert lines[-1] == f"done: {n} steps, 0 failed"
@@ -423,3 +424,4 @@ def test_simulated_run() -> None:
         alarms = sum(x.name in ("alarm", "poweroff") for x in steps)
         assert len(t.requests) == n + alarms     # an alarm step boots once more to read it
         assert any(r.cold for r in t.requests) == any(x.name == "boot" for x in steps)
+        assert all(r.settings["volume"] == "-25" for r in t.requests)   # every boot's

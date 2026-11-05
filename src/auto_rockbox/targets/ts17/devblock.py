@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import struct
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from .adfu import Ts17Error
 
@@ -22,6 +23,8 @@ CFG_MAGIC = 0x43445354          # "TSDC"
 KEYS_MAX = 0xF0                 # keys[]: a script of up to 239 bytes and its NUL
 FLAG_USB = 1 << 0               # let Rockbox start its USB stack (dev builds keep it off)
 FLAG_TRACE = 1 << 1             # log a thread dump before the return
+FLAG_VOLUME = 1 << 2            # set the volume (the config's fourth word, dB) at boot
+VOLUME_DB = (-72, 0)            # the setting's range (lark_codec.h)
 LOG = DEV_BLOCK + 0x100
 LOG_MAGIC = 0x474C5354          # "TSLG"
 LOG_HEADER = 0x10               # the ring follows the header
@@ -30,27 +33,40 @@ LAUNCH_TOKEN = 0x4E55524C       # "LRUN" in r0: started by the host, not the boo
 DEFAULT_RETURN_S = 90           # the image's return time when it finds no config
 RETURN_LINE = "returning to download mode at tick"
 
-SETTINGS = "trace=0|1 (a thread dump before the return)"
+SETTINGS = ("trace=0|1 (a thread dump before the return), volume=DB (-72..0, set once the "
+            "settings are loaded and kept)")
 
 
-def run_flags(settings: Mapping[str, str], usb: bool) -> int:
-    """The config flags for a run's --set SETTINGS"""
-    out = FLAG_USB if usb else 0
+@dataclass(frozen=True)
+class RunOptions:
+    flags: int = 0
+    volume: int = 0             # dB, with FLAG_VOLUME
+
+
+def run_options(settings: Mapping[str, str], usb: bool) -> RunOptions:
+    """The config's flags and volume for a run's --set SETTINGS"""
+    flags, volume = FLAG_USB if usb else 0, 0
     for k, v in settings.items():
-        if k != "trace":
+        if k == "trace":
+            if v not in ("0", "1"):
+                raise Ts17Error(f"--set trace={v}: 0 or 1")
+            flags |= FLAG_TRACE if v == "1" else 0
+        elif k == "volume":
+            lo, hi = VOLUME_DB
+            if not v.lstrip("-").isdigit() or not lo <= int(v) <= hi:
+                raise Ts17Error(f"--set volume={v}: whole dB, {lo}..{hi}")
+            flags, volume = flags | FLAG_VOLUME, int(v)
+        else:
             raise Ts17Error(f"--set {k}: ts17 has no such run setting; it takes {SETTINGS}")
-        if v not in ("0", "1"):
-            raise Ts17Error(f"--set trace={v}: 0 or 1")
-        if v == "1":
-            out |= FLAG_TRACE
-    return out
+    return RunOptions(flags, volume)
 
 
-def run_config(return_s: int, flags: int, keys: str) -> bytes:
+def run_config(return_s: int, opts: RunOptions, keys: str) -> bytes:
     raw = keys.encode()
     if len(raw) >= KEYS_MAX:
         raise Ts17Error(f"key script over {KEYS_MAX - 1} bytes")
-    return struct.pack("<IIII", CFG_MAGIC, return_s, flags, 0) + raw.ljust(KEYS_MAX, b"\0")
+    head = struct.pack("<IIIi", CFG_MAGIC, return_s, opts.flags, opts.volume)
+    return head + raw.ljust(KEYS_MAX, b"\0")
 
 
 def ring_size(header: bytes) -> tuple[int, int]:

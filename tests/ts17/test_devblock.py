@@ -5,7 +5,7 @@ from __future__ import annotations
 import struct
 
 from auto_rockbox.targets.ts17 import Ts17Error, devblock
-from auto_rockbox.targets.ts17.devblock import FLAG_TRACE, FLAG_USB
+from auto_rockbox.targets.ts17.devblock import FLAG_TRACE, FLAG_USB, FLAG_VOLUME, RunOptions
 
 
 def _raises(fn: object, *args: object, match: str = "") -> None:
@@ -25,25 +25,29 @@ def test_magics_spell_their_names() -> None:
 
 
 def test_run_config_bytes() -> None:
-    cfg = devblock.run_config(30, FLAG_USB | FLAG_TRACE, "9000 D S")
+    cfg = devblock.run_config(30, RunOptions(FLAG_USB | FLAG_TRACE | FLAG_VOLUME, -30),
+                              "9000 D S")
     assert len(cfg) == 0x100 == devblock.LOG - devblock.CFG
-    assert cfg[:16] == b"TSDC" + struct.pack("<III", 30, 3, 0)
+    assert cfg[:16] == b"TSDC" + struct.pack("<IIi", 30, 7, -30)
     assert cfg[16:24] == b"9000 D S"
     assert cfg[24:] == bytes(0xF0 - 8)
 
 
 def test_run_config_key_limit() -> None:
-    assert devblock.run_config(0, 0, "D" * 239)[16 + 238:] == b"D\0"
-    _raises(devblock.run_config, 0, 0, "D" * 240, match="239")
+    assert devblock.run_config(0, RunOptions(), "D" * 239)[16 + 238:] == b"D\0"
+    _raises(devblock.run_config, 0, RunOptions(), "D" * 240, match="239")
 
 
-def test_run_flags() -> None:
-    assert devblock.run_flags({}, usb=False) == 0
-    assert devblock.run_flags({}, usb=True) == FLAG_USB
-    assert devblock.run_flags({"trace": "1"}, usb=False) == FLAG_TRACE
-    assert devblock.run_flags({"trace": "0"}, usb=True) == FLAG_USB
-    _raises(devblock.run_flags, {"play": "/a.mp3"}, False, match="trace=0|1")
-    _raises(devblock.run_flags, {"trace": "yes"}, False, match="0 or 1")
+def test_run_options() -> None:
+    assert devblock.run_options({}, usb=False) == RunOptions()
+    assert devblock.run_options({}, usb=True) == RunOptions(FLAG_USB)
+    assert devblock.run_options({"trace": "1"}, usb=False) == RunOptions(FLAG_TRACE)
+    assert devblock.run_options({"trace": "0"}, usb=True) == RunOptions(FLAG_USB)
+    assert devblock.run_options({"volume": "-30"}, usb=False) == RunOptions(FLAG_VOLUME, -30)
+    _raises(devblock.run_options, {"play": "/a.mp3"}, False, match="trace=0|1")
+    _raises(devblock.run_options, {"trace": "yes"}, False, match="0 or 1")
+    for bad in ("-73", "1", "-3.5", "loud"):
+        _raises(devblock.run_options, {"volume": bad}, False, match="-72..0")
 
 
 def _ring(lines: bytes, size: int) -> tuple[int, bytes]:
