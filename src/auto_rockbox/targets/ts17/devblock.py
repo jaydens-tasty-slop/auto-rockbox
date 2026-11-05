@@ -29,6 +29,9 @@ LOG = DEV_BLOCK + 0x100
 LOG_MAGIC = 0x474C5354          # "TSLG"
 LOG_HEADER = 0x10               # the ring follows the header
 EMPTY_LOG_HEADER = bytes(12)    # written before a launch: the image starts a fresh log
+CRUMB_MAGIC = 0x43545354        # "TSTC"
+CRUMB_SIZE = 20                 # magic, tick, pc, lr, in_handler (dev-ts17.c struct dev_crumb)
+CRUMB = DEV_BLOCK + DEV_BLOCK_SIZE - CRUMB_SIZE   # every tick rewrites it; cleared at launch
 LAUNCH_TOKEN = 0x4E55524C       # "LRUN" in r0: started by the host, not the boot chain
 DEFAULT_RETURN_S = 90           # the image's return time when it finds no config
 RETURN_LINE = "returning to download mode at tick"
@@ -76,6 +79,22 @@ def ring_size(header: bytes) -> tuple[int, int]:
         raise Ts17Error(f"no dev log at {LOG:#010x} (no image ran since the "
                         "header was cleared, or it is not a dev build)")
     return total, size
+
+
+@dataclass(frozen=True)
+class Crumb:
+    """Where the image's last tick found the CPU"""
+
+    tick: int
+    pc: int
+    lr: int
+    in_handler: bool            # the tick preempted another handler
+
+
+def crumb(raw: bytes) -> Crumb | None:
+    """The last tick's record, or None (no image with one ran since launch)"""
+    magic, tick, pc, lr, handler = struct.unpack("<IIIII", raw)
+    return Crumb(tick, pc, lr, bool(handler)) if magic == CRUMB_MAGIC else None
 
 
 def log_text(total: int, ring: bytes) -> str:

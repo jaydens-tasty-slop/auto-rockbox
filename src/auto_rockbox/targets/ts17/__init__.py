@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ... import card, fb
-from ...elf import Elf
+from ...elf import Elf, Symbolizer
 from ...registry import register_target
 from ...target import Battery, Lcd, RunRequest, Target
 from ...workspace import ConfigError, Workspace
@@ -108,6 +108,7 @@ class Ts17(Target):
             _note(f"{n} of {len(cells) // nor.SECTOR} sectors rewritten")
             s.link.write(devblock.CFG, config)
             s.link.write(devblock.LOG, devblock.EMPTY_LOG_HEADER)
+            s.link.write(devblock.CRUMB, bytes(devblock.CRUMB_SIZE))
             self._before = adfu.present()
             s.hand_over(power.reset_ops(download=False) if req.cold else
                         nor.launch_ops(nor.FW0_SYS, reset, devblock.LAUNCH_TOKEN), self._before)
@@ -136,10 +137,19 @@ class Ts17(Target):
         return False
 
     def read_log(self, elf: Path | None = None) -> str:
+        """The dev log; without its return line (a hang the recovery watchdog
+        reset), a last line with where the image's last tick found the CPU"""
         with adfu.Adfu() as link:
             total, size = devblock.ring_size(link.read(devblock.LOG, 12))
             ring = link.read(devblock.LOG + devblock.LOG_HEADER, size)
-        return devblock.log_text(total, ring)
+            last = devblock.crumb(link.read(devblock.CRUMB, devblock.CRUMB_SIZE))
+        text = devblock.log_text(total, ring)
+        if last is None or devblock.RETURN_LINE in text:
+            return text
+        pc, lr = Symbolizer(elf or self.image(), self.ws.tool("addr2line")).names(
+            [last.pc, last.lr & ~1])
+        return text + (f"last tick {last.tick}{' (in a handler)' if last.in_handler else ''}: "
+                       f"pc {last.pc:08x} {pc}, lr {last.lr:08x} {lr}\n")
 
     def read_framebuffer(self, elf: Path | None) -> Image:
         """Plain ROM reads; a gadget run (the charger guard, `nor`) overwrites

@@ -50,6 +50,13 @@ def test_run_options() -> None:
         _raises(devblock.run_options, {"volume": bad}, False, match="-72..0")
 
 
+def test_crumb() -> None:
+    assert devblock.CRUMB + devblock.CRUMB_SIZE == devblock.DEV_BLOCK + devblock.DEV_BLOCK_SIZE
+    raw = struct.pack("<IIIII", devblock.CRUMB_MAGIC, 4712, 0x1000_2345, 0x1000_1001, 1)
+    assert devblock.crumb(raw) == devblock.Crumb(4712, 0x1000_2345, 0x1000_1001, True)
+    assert devblock.crumb(bytes(devblock.CRUMB_SIZE)) is None      # cleared at launch
+
+
 def _ring(lines: bytes, size: int) -> tuple[int, bytes]:
     """What the image's log_line() leaves: total and the ring"""
     ring = bytearray(size)

@@ -5,11 +5,12 @@ from __future__ import annotations
 import importlib
 import struct
 from pathlib import Path
+from unittest import mock
 
 from auto_rockbox import fb, registry
-from auto_rockbox.elf import Elf
+from auto_rockbox.elf import Elf, Symbolizer
 from auto_rockbox.keys import KeyScriptError
-from auto_rockbox.targets.ts17 import FB_SYMBOL, Ts17
+from auto_rockbox.targets.ts17 import FB_SYMBOL, Ts17, adfu, devblock
 from auto_rockbox.workspace import Workspace
 
 from . import Skip
@@ -68,3 +69,33 @@ def test_framebuffer_symbol_in_build() -> None:
     if not BUILD_ELF.exists():
         raise Skip(f"no {BUILD_ELF}")
     assert Elf(BUILD_ELF).address(FB_SYMBOL) == 0x01040000
+
+
+class _Link:
+    """adfu.Adfu over a dev block: the log ring and the last tick's record"""
+
+    def __init__(self, log: bytes, crumb: bytes) -> None:
+        self.mem = {devblock.LOG: struct.pack("<III", devblock.LOG_MAGIC, len(log), 64),
+                    devblock.LOG + devblock.LOG_HEADER: log.ljust(64, b"\0"),
+                    devblock.CRUMB: crumb}
+
+    def __enter__(self) -> _Link:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        pass
+
+    def read(self, addr: int, n: int) -> bytes:
+        return self.mem[addr][:n]
+
+
+def test_read_log_after_a_hang() -> None:
+    crumb = struct.pack("<IIIII", devblock.CRUMB_MAGIC, 4712, 0x10002344, 0x10001001, 0)
+    t = Ts17(Workspace(Path("/nonexistent")))
+    names = mock.patch.object(Symbolizer, "names", lambda _s, a: [f"f{x:x}" for x in a])
+    with names, mock.patch.object(adfu, "Adfu", lambda: _Link(b"track: /a.ac3\n", crumb)):
+        log = t.read_log(Path("x.elf"))
+    assert log.endswith("last tick 4712: pc 10002344 f10002344, lr 10001001 f10001000\n"), log
+    done = f"{devblock.RETURN_LINE} 5000\n".encode()
+    with names, mock.patch.object(adfu, "Adfu", lambda: _Link(done, crumb)):
+        assert "last tick" not in t.read_log(Path("x.elf"))      # it returned: no hang
