@@ -158,6 +158,12 @@ DB_COMMIT_DELAYED = "Please reboot to enable"   # LANG_PLEASE_REBOOT, root_menu.
 ERROR_MSG = re.compile(r"(?i)error|fail|not enough|memory|cannot|can't|couldn't|unable|"
                        r"invalid|corrupt|incompatible|wrong|not found|unsupported|leak|"
                        r"denied|too (big|large|long)|no file(?!s)|panic|bad ")
+# What random keys provoke on any player: they accept an empty (or "/", "..")
+# name in a keyboard, which upstream refuses with FORC_UNKNOWN_FAILURE
+# (apps/fileop.c prompt_name()); a failing mkdir or rename reports ten times
+# its error, never -1
+RANDOM_KEY_MSG = re.compile(r"(?i)^(create directory|rename) failed \(-1\)$")
+SHARED_EXPECTED_MSGS = {"monkey": RANDOM_KEY_MSG, "crawl": RANDOM_KEY_MSG}
 # Plugins that end in "Plugin returned error" when started without their data
 # or a file (upstream behaviour): the splash that explains it, None if none
 KNOWN_PLUGIN_ERRORS: dict[str, str | None] = {
@@ -286,7 +292,7 @@ def parse_sel(lines: Iterable[str]) -> Sel | None:
 
 
 def message_problems(msgs: list[tuple[str, str]],
-                     expected: re.Pattern[str] | None = None) -> list[str]:
+                     *expected: re.Pattern[str] | None) -> list[str]:
     """The messages that read as errors, but those EXPECTED (what the step's
     scenario provokes) and the known plugin errors (a plugin's "returned
     error" and the splash before it)"""
@@ -296,7 +302,7 @@ def message_problems(msgs: list[tuple[str, str]],
     for kind, text in msgs:
         if kind in ("decode", "video", "lost") or not (kind == "plugin" or ERROR_MSG.search(text)):
             continue
-        if expected and expected.search(text):
+        if any(e and e.search(text) for e in expected):
             continue
         if known and (any(f"/{r} " in text for r in KNOWN_PLUGIN_ERRORS)
                       or text == "Plugin returned error"
@@ -910,7 +916,8 @@ class RockboxTorture(TortureSuite):
                 self.msgs_lost += int(text)
             else:
                 self.messages[(kind, text)] += 1
-        bad += message_problems(msgs, self.expected_msgs.get(self.step.name))
+        bad += message_problems(msgs, self.expected_msgs.get(self.step.name),
+                                SHARED_EXPECTED_MSGS.get(self.step.name))
         return [f"messages: {'; '.join(bad)[:300]}"] if bad else []
 
     def charge_check(self) -> list[str]:

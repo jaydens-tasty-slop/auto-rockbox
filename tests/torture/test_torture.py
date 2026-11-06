@@ -164,6 +164,12 @@ def test_message_judging() -> None:
     prompt = ("yesno", "Not enough memory for / the database")
     assert rt.message_problems([prompt], re.compile("(?i)not enough memory")) == []
     assert rt.message_problems([prompt]) == ['yesno "Not enough memory for / the database"']
+    # random keys' empty folder name (torture 18 step 107), not a failing mkdir
+    empty = ("splash", "Create Directory Failed (-1)")
+    mkdir = ("splash", "Create Directory Failed (-20)")
+    monkey = rt.SHARED_EXPECTED_MSGS["monkey"]
+    assert rt.message_problems([empty, mkdir], None, monkey) == [f'splash "{mkdir[1]}"']
+    assert rt.message_problems([empty]) == [f'splash "{empty[1]}"']
     # a plugin known to fail without its data, and the splash that says why
     dict_rock = [("splash", "Failed to open index"),
                  ("plugin", "/.rockbox/rocks/apps/dict.rock returned error")]

@@ -696,7 +696,8 @@ def torture_cmd(ctx: Context, args: Namespace) -> int:
         raise UsageError(f"{args.image}: no such image")
     seed = args.seed if args.seed is not None else int(datetime.now().timestamp())
     weights = {k: int(v) for k, _, v in (w.partition("=") for w in args.weights.split(",") if w)}
-    ledger = args.ledger or ctx.ws.section("torture").opt_path("ledger")
+    ledger = (None if args.ledger == Path("none")
+              else args.ledger or ctx.ws.section("torture").opt_path("ledger"))
     s = suite_class(ctx.t.name)(ctx.t, args.image, boot=not args.no_boot,
                                 after_boot=args.after_boot, ledger=ledger, seed=seed)
     try:
