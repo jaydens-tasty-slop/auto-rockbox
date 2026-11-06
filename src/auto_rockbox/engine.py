@@ -172,7 +172,7 @@ def run(suite: Suite, s: RunSettings, echo: Callable[[str], None] = print) -> li
     s.out.mkdir(parents=True, exist_ok=True)
     start = datetime.now()
     echo(f"{suite.name} on {suite.target.name}: seed {s.seed}, until "
-         f"{s.deadline:%Y-%m-%d %H:%M}, scenarios {', '.join(names)}")
+         f"{s.deadline:%Y-%m-%d %H:%M}, scenarios {', '.join(n for n in names if n in pool)}")
     suite.start(s.out)
     steps: list[Step] = []
     with (s.out / "steps.jsonl").open("a") as log:

@@ -178,15 +178,17 @@ for _name, _command in (("sim-ok", "work"), ("sim-glitch", "glitch"), ("sim-leak
 gen.scenario("sim-fail", target={"sim"})(sim_step("work", "a problem of its own"))
 
 
-def sim_run(root: Path, only: list[str], steps: int, seed: int = 3
+def sim_run(root: Path, only: list[str], steps: int, seed: int = 3, *,
+            weights: dict[str, int] | None = None,
+            echo: Callable[[str], None] = lambda line: None
             ) -> tuple[SimPlayer, SimSuite, list[engine.Step]]:
     p = SimPlayer(Workspace(root))
     s = SimSuite(p, root / "rockbox.elf", ledger=root / "ledger.csv", seed=seed)
     clock = Clock()
     with fast(clock), mock.patch.object(engine, "datetime", engine_steps(steps)):
         try:
-            done = engine.run(s, engine.RunSettings(root / "run", deadline(steps), seed, only),
-                              echo=lambda line: None)
+            done = engine.run(s, engine.RunSettings(root / "run", deadline(steps), seed, only,
+                                                    weights or {}), echo=echo)
         finally:
             s.close()
     return p, s, done

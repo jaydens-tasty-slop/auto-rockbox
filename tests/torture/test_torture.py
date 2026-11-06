@@ -312,6 +312,17 @@ def test_simulated_run() -> None:
         assert row.scenarios == " ".join(sorted(only))
 
 
+def test_weight_zero() -> None:
+    """A weight of 0 leaves a scenario out of the steps and of the run's
+    first line"""
+    lines: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        _, _, steps = sim_run(Path(tmp), ["sim-ok", "sim-fail"], 8, weights={"sim-fail": 0},
+                              echo=lines.append)
+    assert [x.name for x in steps] == ["sim-ok"] * 8
+    assert lines[0].endswith(", scenarios sim-ok")
+
+
 def test_simulated_leak() -> None:
     """Free memory read after settled steps: a slow leak fails the step where
     the ceiling falls past the budget, once"""
