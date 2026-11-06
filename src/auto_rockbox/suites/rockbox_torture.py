@@ -1304,20 +1304,25 @@ class RockboxTorture(TortureSuite):
 
     def bt_case(self, case: Callable[[RockboxTorture], str]) -> str:
         """A bt-* step: ready, music, the case; then the output settled, the
-        bitpool back, health"""
+        bitpool back, health. The music repeats all step long: the end of its
+        folder would stop the stream that the checks measure."""
         if not self.bt_ready():
             return f"skipped: {self.bt_off}" if self.bt_off else "setup failed"
-        self.music()
-        h = self.health()
-        what = case(self)
-        self.sh(f"vol {VOLUME_DB}")            # after AVRCP volume keys
-        if self.bt_off:
+        self.sh("repeat 1")
+        try:
+            self.music()
+            h = self.health()
+            what = case(self)
+            self.sh(f"vol {VOLUME_DB}")            # after AVRCP volume keys
+            if self.bt_off:
+                return what
+            self.bt_settled(what)
+            if self.bt_status().status == BT_STREAMING:
+                self.bt_bitpool(what)
+            self.check_health(h)
             return what
-        self.bt_settled(what)
-        if self.bt_status().status == BT_STREAMING:
-            self.bt_bitpool(what)
-        self.check_health(h)
-        return what
+        finally:
+            self.sh("repeat 0")
 
 
 def rockbox_scenario(name: str, *, weight: int, needs: Iterable[str] = ()) -> Register:
@@ -2228,7 +2233,6 @@ def bt_headset(t: RockboxTorture) -> str:
                           switch_after=(0.0, 6.0), switch_share=0.8, lose_share=0.4,
                           relose_share=0.4, repage_wait=40.0, seed=seed)
     limit = cycles * HEADSET_CYCLE_S + HEADSET_SPARE_S
-    t.sh("repeat 1")                    # music for every cycle
     t.sh("bt stack sink bt")
     if track := t.library_track():
         t.sh(f"play {track}")
@@ -2237,7 +2241,6 @@ def bt_headset(t: RockboxTorture) -> str:
     except TimeoutError:
         t.fail(f"{what}: the cycles still ran after {limit} s")
     finally:
-        t.sh("repeat 0")
         t.take_back_adapter(what)
     try:
         lines = (out / "cycles.txt").read_text().splitlines()

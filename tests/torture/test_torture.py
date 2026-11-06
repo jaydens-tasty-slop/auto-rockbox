@@ -389,6 +389,11 @@ def test_bt_setup_after_a_run_cut_short() -> None:
         assert pc.reclaimed == 1 and pc.agents == 1 and pc.knows and p.dev.bt_addr == PC
         connects = [x for x in p.dev.sent[sent:] if x.startswith("bt stack connect")]
         assert len(connects) == 2, connects         # the pairing's, churn's own
+        # the music repeats while the step works the stream, and not after
+        new = p.dev.sent[sent:]
+        on, off = new.index("repeat 1"), len(new) - 1 - new[::-1].index("repeat 0")
+        at = [i for i, x in enumerate(new) if x.startswith("bt stack connect")]
+        assert on < at[-1] < off, new
 
 
 def test_bt_forget_and_pair_again() -> None:
