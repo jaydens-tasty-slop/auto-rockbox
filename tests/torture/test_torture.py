@@ -551,6 +551,17 @@ def test_boot_and_steps() -> None:
         assert not any(x.startswith("fm") for x in p.dev.sent)
 
 
+def test_wait_within() -> None:
+    """A playing check ends 5 s before the track does, counted from where it
+    is: a 20 s file read ~1 s in (TS17 torture 15 step 115)"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp), "") as (_, s, _):
+        with mock.patch.object(s, "playing", return_value=rt.Status(1, 975, 20023, 44100, "x")):
+            assert abs(s.wait_within(18) - 14.048) < 1e-9
+            assert s.wait_within(8) == 8
+        with mock.patch.object(s, "playing", return_value=rt.Status(1, 0, 0, 0, "x")):
+            assert s.wait_within(18) == 18                  # no length yet
+
+
 def test_sink_left_on_bluetooth() -> None:
     """A step that leaves the output on Bluetooth with no device linked
     fails, and the output goes back to the built-in one"""

@@ -956,9 +956,10 @@ class RockboxTorture(TortureSuite):
 
     def wait_within(self, wait: float) -> float:
         """WAIT, or less so a playing check (3 s) ends before the track does
-        (some test files are 12 s)"""
-        length = self.playing().length / 1000
-        return max(1, min(wait, length - 5)) if length else wait
+        (some test files are 12 s): what is left of it, not its length (a
+        status read ~1 s in left a 20 s file 0.2 s short)"""
+        s = self.playing()
+        return max(1, min(wait, (s.length - s.elapsed) / 1000 - 5)) if s.length else wait
 
     def library_track(self, album: bool = False) -> str | None:
         """A random track of the music library (artist/album folders, the
