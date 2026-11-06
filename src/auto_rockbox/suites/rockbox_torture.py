@@ -195,6 +195,7 @@ CRAWL_KEYS = ["U", "D", "L", "R", "S", "U+", "D+", "L+", "R+", "S+", "UL"]
 
 # Bluetooth
 BT_CONNECT_S = 25               # connect and reconnect deadline
+BT_SCAN_S = 30                  # the player's inquiry and name requests end within
 BT_GONE_S = 30                  # link loss seen (supervision timeout 20 s)
 BT_SETTLE_S = 4                 # audio routing follows a status change
 BT_OFF, BT_ON, BT_CONNECTED, BT_STREAMING = range(4)    # enum bt_status
@@ -1444,15 +1445,33 @@ class RockboxTorture(TortureSuite):
 
     def take_back_adapter(self, what: str) -> None:
         """After the peer: the player forgets its key, BlueZ gets the adapter
-        back, and the player pairs with this PC again and streams"""
+        back, the player scans, and it pairs with this PC again and streams"""
         pc = self.link()
         self.sh(f"bt stack forget {pc.adapter}")
         if not pc.reclaim():
             self.fail(f"{what}: BlueZ did not get this PC's adapter back: bt off for this run")
             self.bt_off = "BlueZ lost this PC's adapter"
             return
+        self.bt_rescan()
         if self.bt_ready():
             self.bt_streaming(what)
+
+    def bt_rescan(self) -> None:
+        """A scan by the player with this PC discoverable, to its end. The
+        peer had this PC's address, and a page takes the link's class from
+        the scan list: as an input device's, the player opens no AVDTP and
+        BlueZ drops the idle link (every setup after a bt-hid step failed)."""
+        pc = self.link()
+        pc.ctl("discoverable", "on")
+        try:
+            self.sh("bt stack scan")
+            end = time.monotonic() + BT_SCAN_S
+            while time.monotonic() < end:
+                time.sleep(1)
+                if any("scanning 0" in ln for ln in self.sh("bt stack list")):
+                    return
+        finally:
+            pc.ctl("discoverable", "off")
 
     def pc_stuck(self, what: str) -> str:
         """This PC's adapter did not reach the power state asked for: not the

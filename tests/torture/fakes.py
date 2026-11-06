@@ -322,7 +322,8 @@ class DevShell(Shell):
                     "968 of 2048"] + ([f"bt connected 0: {self.bt_addr} cod 000000"]
                                       if self.bt_addr else [])
         if cmd == "list":
-            return [f'bt paired 0: {PC} "pc"'] if self.bt_paired else []
+            return ["bt stack: scanning 0"] + ([f'bt paired 0: {PC} "pc"'] if self.bt_paired
+                                               else [])
         if cmd == "forget":
             self.bt_paired = False
             if self.bt_addr == arg:

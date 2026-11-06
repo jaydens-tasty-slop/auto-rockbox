@@ -652,6 +652,9 @@ def test_bt_headset() -> None:
             " ok, 1 lost: cycle 7: stall at media; page:0.5; vanished"), problems
         # reclaimed by the run's first bt step and after the peer
         assert pc.reclaimed == 2 and pc.agents == 1 and p.dev.bt_paired and p.dev.bt_addr == PC
+        # the player rescans before it pages this PC again
+        last = max(i for i, x in enumerate(p.dev.sent) if x == f"bt stack connect {PC}")
+        assert "bt stack scan" in p.dev.sent[:last]
         assert "repeat 1" in p.dev.sent and "repeat 0" in p.dev.sent
         assert [x.split(" | ", 1)[1] for x in s.transcript if " | " in x] == [
             "bt: connected, handle 11", "bt: disconnected: 08"]
