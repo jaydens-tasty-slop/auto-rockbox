@@ -51,12 +51,13 @@ from PIL import Image
 from ..shell import Shell
 from . import hidkeys
 from .controller import PeerController, StackHciServer
-from .logs import Tally, log, peer_logging
+from .logs import Tally, log, peer_logging, why
 from .options import HidOptions, split_hci
 from .profiles import classic_device, intercept, just_works
 
 PASSKEY_EVENT = 0x3B                # HCI_User_Passkey_Notification
 PASSKEY_WAIT_S = 30.0
+DISCONNECT_S = 5.0                  # for the stack to confirm the device's disconnect
 SHOT_SCALE = 3
 PROTOCOLS = {None: "not set", 0: "boot", 1: "report"}
 
@@ -437,8 +438,20 @@ async def run_air(opts: HidOptions, shell: Shell, adapter: str, player: str) -> 
                         break
             finally:
                 stream.cancel()
+                await _hang_up(peer.device)
     log.info("%s", "PASS" if ok else "FAIL")
     return 0 if ok else 1
+
+
+async def _hang_up(device: Device) -> None:
+    """End the links as a controller switched off does (0x13). Without it
+    the player holds the link until its supervision timeout (0x08, ~20 s),
+    and a torture took it for the link to this PC, whose address it has."""
+    for connection in list(device.connections.values()):
+        try:
+            await asyncio.wait_for(connection.disconnect(), DISCONNECT_S)
+        except Exception as error:
+            log.info("disconnect: %s", why(error))
 
 
 async def _player_connects(sh: Sh, peer: InputDevice, addr: str) -> None:
