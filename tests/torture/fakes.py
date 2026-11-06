@@ -240,7 +240,7 @@ class DevShell(Shell):
 
     def reset(self) -> None:
         self.audio, self.path, self.started = 0, "-", 0.0
-        self.underruns, self.log = 0, [f"Rockbox on {self.name}"]
+        self.underruns, self.stalls, self.log = 0, 0, [f"Rockbox on {self.name}"]
         self.msgs: list[str] = []           # "KIND TEXT", numbered from 1
 
     def boot(self) -> None:
@@ -274,10 +274,10 @@ class DevShell(Shell):
         cmd, _, arg = line.partition(" ")
         if cmd == "health":
             if arg == "reset":
-                self.underruns = 0
+                self.underruns = self.stalls = 0
             return [f"health up 30 s audio {self.audio} elapsed {self.elapsed()}/233046 "
-                    f"underruns {self.underruns}/0 stalls 0 maxstall 0 ui_late 0 ui_age 6 "
-                    "free 18912 cpu 64 act 1 plugin - db 0"]
+                    f"underruns {self.underruns}/0 stalls {self.stalls} maxstall 0 ui_late 0 "
+                    "ui_age 6 free 18912 cpu 64 act 1 plugin - db 0"]
         if cmd == "play":
             self.audio, self.path, self.started = 1, arg, self.clock.now
         elif cmd == "stop":

@@ -695,6 +695,7 @@ class RockboxTorture(TortureSuite):
         self.bt_known = False
         self.bt_off = ""                # why the bt-* scenarios do nothing this run
         self.bt_recovering = False
+        self.bt_lost = 0                # links a bt-* case let vanish on purpose
 
     # ---- the card's dev folder
 
@@ -1488,6 +1489,7 @@ class RockboxTorture(TortureSuite):
         if not self.bt_ready():
             return f"skipped: {self.bt_off}" if self.bt_off else "setup failed"
         self.sh("repeat 1")
+        self.bt_lost = 0
         try:
             self.music()
             h = self.health()
@@ -1498,7 +1500,8 @@ class RockboxTorture(TortureSuite):
             self.bt_settled(what)
             if self.bt_status().status == BT_STREAMING:
                 self.bt_bitpool(what)
-            self.check_health(h)
+            # a link that vanishes stalls playback until its supervision timeout
+            self.check_health(h, allow={"stalls": self.bt_lost})
             return what
         finally:
             self.sh("repeat 0")
@@ -2441,7 +2444,7 @@ def bt_headset(t: RockboxTorture) -> str:
     except OSError:
         lines = []
     bad = [ln.split(" ", 2)[2] for ln in lines if not re.search(r"cycle \d+: ok;", ln)]
-    lost = sum("vanished" in ln for ln in lines)
+    lost = t.bt_lost = sum("vanished" in ln for ln in lines)
     what += f": {len(lines) - len(bad)} of {cycles} ok, {lost} lost"
     if bad or len(lines) < cycles:
         t.fail(f"{what}: " + ("; ".join(bad[:3]) or f"{len(lines)} cycles ran"))

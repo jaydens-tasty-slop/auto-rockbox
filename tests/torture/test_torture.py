@@ -639,6 +639,7 @@ def test_bt_headset() -> None:
                      "vanished")
         (opts.out / "cycles.txt").write_text("\n".join(lines) + "\n")
         p.dev.mirrored += ["bt: connected, handle 11", "bt: disconnected: 08"]
+        p.dev.stalls += 1                   # playback, until the vanished link's timeout
         while p.dev.mirrored:               # the mirror reads them meanwhile
             threading.Event().wait(0.01)
 
@@ -647,7 +648,7 @@ def test_bt_headset() -> None:
           mock.patch.object(pcheadset, "main", cycles)):
         assert link is not None
         pc = link
-        problems = step(s, "bt-headset")
+        problems = step(s, "bt-headset")       # the vanished cycle's stall is no problem
         assert len(problems) == 1 and problems[0].endswith(
             " ok, 1 lost: cycle 7: stall at media; page:0.5; vanished"), problems
         # reclaimed by the run's first bt step and after the peer

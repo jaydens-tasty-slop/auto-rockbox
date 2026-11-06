@@ -56,7 +56,7 @@ import threading
 import time
 from argparse import Namespace
 from collections import deque
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -462,13 +462,15 @@ class TortureSuite(Suite):
             time.sleep(5)
         raise Lost("no health line in three replies")
 
-    def check_health(self, before: Health, ignore: Iterable[str] = ()) -> Health:
-        """Fails the step on any counter that rose since BEFORE (but IGNORE);
-        the reading after, a baseline for the next check"""
+    def check_health(self, before: Health, ignore: Iterable[str] = (),
+                     allow: Mapping[str, int] | None = None) -> Health:
+        """Fails the step on any counter that rose since BEFORE (but IGNORE,
+        and by no more than ALLOW's count); the reading after, a baseline
+        for the next check"""
         after = self.health()
-        skip = set(ignore)
-        rises = [f"{k} +{after.num(k) - before.num(k)}" for k in self.counters
-                 if k not in skip and after.num(k) > before.num(k)]
+        skip, allow = set(ignore), allow or {}
+        rises = [f"{k} +{n}" for k in self.counters
+                 if k not in skip and (n := after.num(k) - before.num(k)) > allow.get(k, 0)]
         if rises:
             self.fail(", ".join(rises))
             self.sh("log")              # what led to it, in the step's output
