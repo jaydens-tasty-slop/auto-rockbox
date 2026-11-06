@@ -318,6 +318,20 @@ def test_plugin_keys_stop_when_the_plugin_quits() -> None:
         assert [x for x in p.dev.sent[sent:] if x.startswith("keys")] == ["keys L", "keys S"]
 
 
+def test_close_plugin_stops_mid_chord() -> None:
+    """An exit chord that quits the plugin halfway: the rest of it is not
+    sent (it would work the main menu), nor any later exit"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (p, s, _):
+        sent = len(p.dev.sent)
+        first = rt.PLUGIN_EXITS[0].split()
+        quits_after = len(first) + 1
+        with mock.patch.object(s, "in_plugin",
+                               side_effect=[True] * quits_after + [False]):
+            assert s.close_plugin()
+        keys = [x for x in p.dev.sent[sent:] if x.startswith("keys")]
+        assert keys == [f"keys {k}" for k in (first + rt.PLUGIN_EXITS[1].split())[:quits_after]]
+
+
 def test_library_track_backs_out_of_dead_ends() -> None:
     """A stock card's folders hold no music: the walk backs out of them and
     finds the album; no library at all: None, within LIBRARY_LS listings"""

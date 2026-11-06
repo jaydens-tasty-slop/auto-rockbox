@@ -928,21 +928,22 @@ class RockboxTorture(TortureSuite):
         h = self.health()
         return h.text("plugin") != "-" or h.num("act") == ACT_PLUGIN
 
-    def plugin_keys(self, tokens: list[str]) -> None:
-        """Random keys for a plugin, one at a time while it runs: once it
-        quits (a Back, or a dismissed "Unsupported format" screen) the rest
-        would work the menus instead (a stray "No files" splash)"""
+    def plugin_keys(self, tokens: list[str]) -> bool:
+        """Keys for a plugin, one at a time while it runs: once it quits (a
+        Back, an exit chord, a dismissed "Unsupported format" screen) the
+        rest would work the menus instead (Up, Select: the empty Shortcuts
+        menu's "No files" splash). False once it has quit."""
         for k in tokens:
             if not self.in_plugin():
-                return
+                return False
             self.keys(k)
+        return True
 
     def close_plugin(self) -> bool:
         """Out of any running plugin; False if no exit worked"""
         for script in PLUGIN_EXITS:
-            if not self.in_plugin():
+            if not self.plugin_keys(script.split()):
                 return True
-            self.keys(script)
         return not self.in_plugin()
 
     def no_plugin(self) -> None:
