@@ -120,6 +120,7 @@ PROBE = f"{CODECTEST}/flac_16_44.flac"          # an SD codec: are the modules t
 UNSUPPORTED = f"{CODECTEST}/wma_320.wma"        # WMA: no codec on master
 STRESS = "/stress"                              # `arb media-stress`
 STRESS_PLAYLIST = f"/{media.STRESS_PLAYLIST}"
+STRESS_RATES = {48000: re.compile(r"_48k?\."), 44100: re.compile(r"_44[._]")}   # by name
 ROCKS = "/.rockbox/rocks"
 PLUGIN_DIRS = ("games", "apps", "demos")
 # xrick: without Rick Dangerous's data files (nobody ships them) it only
@@ -2312,6 +2313,53 @@ def bt_churn(t: RockboxTorture) -> str:
         time.sleep(2)
     t.bt_streaming(what)
     return what
+
+
+@bt_scenario("rate", 2)
+def bt_rate(t: RockboxTorture) -> str:
+    """The output moves to the headset with tracks at the other rate loaded
+    and still buffering: they must play on (a PCM ring sized by the rate was
+    remade under them, and every later play sat at 0/0: TS17 torture 12).
+    The link drops, a queue at the rate the stream does not use plays on the
+    built-in output, the link comes back; it drops again and a file at the
+    stream's rate plays."""
+    full = " ".join(t.sh("status full"))
+    stream_hz = 48000 if (m := re.search(r" freq (\d+)", full)) and m[1] == "48000" else 44100
+    other_hz = 44100 if stream_hz == 48000 else 48000
+    names = ls_entries(t.sh(f"ls {STRESS}"))
+    other = [f"{STRESS}/{e}" for e in names if STRESS_RATES[other_hz].search(e)]
+    same = [f"{STRESS}/{e}" for e in names if STRESS_RATES[stream_hz].search(e)]
+    if not other or not same:
+        t.fail(f"rate: no {other_hz} and {stream_hz} Hz files in {STRESS}")
+        return "rate"
+    t.rng.shuffle(other)
+    queue = other[0]
+    for f in other[1:]:                 # as many as the shell's line takes
+        if len(f"play {queue};{f}") <= SHELL_LINE:
+            queue += f";{f}"
+    what = f"rate: {queue.count(';') + 1} at {other_hz} Hz, the stream at {stream_hz}"
+    t.sh("bt stack disconnect")
+    if not t.bt_gone(what):
+        return what
+    t.sh(f"play {queue}")
+    time.sleep(t.rng.uniform(1, 4))
+    if t.bt_reconnect(what) is None:
+        return what
+    time.sleep(2)
+    if (audio := t.health().num("audio")) != AUDIO_PLAYING:
+        t.fail(f"{what}: audio {audio} after the output moved to the headset")
+        return what
+    if not t.bt_streaming(what):
+        return what
+    t.sh("bt stack disconnect")
+    if not t.bt_gone(what):
+        return what
+    f = t.rng.choice(same)
+    t.sh(f"play {f}")
+    t.expect_playing(f, f"play {f}")
+    if t.bt_reconnect(what) is not None:
+        t.bt_streaming(what)
+    return f"{what}, then {PurePosixPath(f).name}"
 
 
 @bt_scenario("disturb", 2)

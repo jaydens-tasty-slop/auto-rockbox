@@ -237,6 +237,7 @@ class DevShell(Shell):
         self.bt_paired = True               # the player has this PC's key
         self.mirrored: list[str] = []       # log lines a hold() reads
         self.stuck_on_missing = False       # a play of a missing file sits at 0/0
+        self.stops_on_rate = False          # a link with 48 kHz tracks loaded stops them
         self.reset()
 
     def reset(self) -> None:
@@ -298,6 +299,9 @@ class DevShell(Shell):
         elif line == "ls /codectest":
             return ["ls /codectest:", "  flac_16_44.flac 1234", "  mp3_320.mp3 5678",
                     "  wv_24_44.wv 999", "  readme.txt 10"]
+        elif line == "ls /stress":
+            return ["ls /stress:", "  mp3_cbr192_48k.mp3 480000", "  flac_16_48.flac 2400000",
+                    "  wav_16_44.wav 3528000", "  aiff_16_44.aiff 3528000"]
         elif line == "ls /":
             return ["ls /:", "  Whistle Remix.mp3 11221382", "  codectest/ 0",
                     f"  {self.card_dir.strip('/')}/ 0"]
@@ -336,6 +340,8 @@ class DevShell(Shell):
         elif cmd == "connect" and self.pc and self.pc.answers(self.bt_paired):
             self.bt_addr, self.bt_paired = arg, True
             self.sink = 1                   # the policy routes to the headset
+            if self.stops_on_rate and "_48" in self.path:
+                self.audio = 0              # the remake closed their handles
         elif cmd == "sink":
             self.sink = int(arg == "bt")
         return []

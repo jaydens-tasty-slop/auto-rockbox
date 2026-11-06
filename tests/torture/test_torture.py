@@ -50,7 +50,7 @@ SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "fs": 4, "db": 4, "usb
                   "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "video": 4, "missing": 2}
 FEATURE_WEIGHTS = {"sleep": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,
-              "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
+              "bt-rate": 2, "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
 BUMBLE_WEIGHTS = {"bt-headset": 2}
 HID_WEIGHTS = {"bt-hid": 2}             # with Bumble and a build with Bluetooth HID
 
@@ -632,6 +632,26 @@ def test_bt_capture() -> None:
         with mock.patch.object(rt.pcsink, "record", record((2.0, 0.03))):
             problems = step(s, "bt-capture")
         assert len(problems) == 1 and "1 dropouts (s, ms): [(2.0, 29)]" in problems[0], problems
+
+
+def test_bt_rate() -> None:
+    """bt-rate: the 48 kHz files queued on the built-in output while the
+    link is down must play on when it comes back (the stream at 44.1 kHz on
+    a build without `status full`'s freq), then a 44.1 kHz file plays"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp), "") as (p, s, _):
+        sent = len(p.dev.sent)
+        assert step(s, "bt-rate") == []
+        plays = [x for x in p.dev.sent[sent:] if x.startswith("play /stress/")]
+        assert len(plays) == 2, plays
+        assert sorted(plays[0][5:].split(";")) == ["/stress/flac_16_48.flac",
+                                                   "/stress/mp3_cbr192_48k.mp3"]
+        assert plays[1] in ("play /stress/wav_16_44.wav", "play /stress/aiff_16_44.aiff")
+        assert p.dev.bt_addr == PC
+        # a build that remade the buffer under them: playback stopped
+        p.dev.stops_on_rate = True
+        problems = step(s, "bt-rate")
+        assert len(problems) == 1 and problems[0].endswith(
+            "audio 0 after the output moved to the headset"), problems
 
 
 def test_capture_problems() -> None:

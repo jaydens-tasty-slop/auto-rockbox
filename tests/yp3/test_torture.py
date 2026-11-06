@@ -29,7 +29,7 @@ YP3_WEIGHTS = {"codecs": 12, "skips": 6, "monkey": 8, "plugins": 6, "fs": 4, "db
                "codecmix": 8, "shuffle": 8, "folders": 4, "decode": 10, "linein": 4,
                "video": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,
-              "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
+              "bt-rate": 2, "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
 BUMBLE_WEIGHTS = {"bt-headset": 2, "bt-hid": 2}
 FMMON_0 = ["fmmon: periods=9509 consumed=9508 over=0 under=55 peak 2/174 avg 0/44",
            "mixer chan=1 pcm playing=1 dac periods=77529",
