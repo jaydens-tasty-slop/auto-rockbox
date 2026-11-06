@@ -421,6 +421,26 @@ def test_walk_finds_an_item_the_tree_left_out() -> None:
         assert "'Bluetooth: Off' (menu tree 0.4) is not in the list" in s.notes[-1]
 
 
+def test_database_refusals_are_not_failures() -> None:
+    """Database stays shut when music holds the memory: the low memory
+    yesno, or the commit tagcache delays to the next boot; anything else
+    that leaves the main menu is a failure"""
+    cases = [([("yesno", "Not enough memory for the database. Continue?")], "not enough memory"),
+             ([("splash", rt.DB_COMMIT_DELAYED)], "waits for a reboot"),
+             ([("splash", "No files")], None)]
+    for msgs, why in cases:
+        with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (_, s, _), \
+                mock.patch.object(s, "music"), mock.patch.object(s, "home", return_value=True), \
+                mock.patch.object(s, "menu", return_value=rt.ACT_MAINMENU), \
+                mock.patch.object(s, "msgs", return_value=msgs), \
+                mock.patch.object(s, "menu_fail") as fail:
+            got = rt.dbdeep(s)
+            if why:
+                assert got and why in got and not fail.called
+            else:
+                assert got is None and "gave activity" in fail.call_args.args[0]
+
+
 def test_plugin_keys_stop_when_the_plugin_quits() -> None:
     """Random keys go to the plugin only: none after it quit"""
     with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (p, s, _):

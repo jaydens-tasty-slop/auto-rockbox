@@ -150,6 +150,7 @@ SEL_TRIES = 4                   # corrections a menu walk makes at one level
 SEL_SETTLE_S = 0.4              # `sel` unchanged this long: the UI took its keys
 SEL_READS = 10                  # and how many reads wait for that
 SEL_ITEM_MAX = 47               # `sel` item text kept (dev_shell.c drawn_list.item)
+DB_COMMIT_DELAYED = "Please reboot to enable"   # LANG_PLEASE_REBOOT, root_menu.c
 
 # A message (splash, prompt) that reports a failure ("No files" is an empty
 # list's notice, as an empty Shortcuts menu shows; "No file" is not)
@@ -1862,9 +1863,15 @@ def dbdeep(t: RockboxTorture) -> str | None:
     act = t.menu("database")
     if act != ACT_DATABASE:
         # low memory: the menus come from free heap only
-        if any("the database" in text for kind, text in t.msgs() if kind == "yesno"):
+        msgs = t.msgs()
+        if any("the database" in text for kind, text in msgs if kind == "yesno"):
             t.home()
             return f"refused: not enough memory while music plays (free {h.num('free')})"
+        # no buffer for a commit (no dircache or ramcache, playback holds the
+        # heap): tagcache delays it to the next boot, upstream's design
+        if ("splash", DB_COMMIT_DELAYED) in msgs:
+            t.home()
+            return f"refused: the database commit waits for a reboot (free {h.num('free')})"
         t.menu_fail(f"main menu -> Database gave activity {act}, "
                     f"free {t.health().num('free')}")
         t.home()
