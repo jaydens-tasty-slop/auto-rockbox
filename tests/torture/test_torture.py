@@ -671,6 +671,15 @@ def test_bt_rate() -> None:
             "audio 0 after the output moved to the headset"), problems
 
 
+def test_bt_resume_leaves_recording() -> None:
+    """A streaming check first leaves a recording screen that browsing
+    reached (torture 17 step 75), then plays from the library"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp), "") as (p, s, _):
+        p.dev.act, p.dev.audio = 3, 0
+        s.bt_resume()
+        assert (p.dev.act, p.dev.audio) == (1, 1)
+
+
 def test_capture_problems() -> None:
     good = analysis.WavAnalysis(44100, 2, 5.0, [1000.2, 1499.0], [(1.0, 4.0)], [])
     assert rt.capture_problems(good) == []

@@ -1406,7 +1406,10 @@ class RockboxTorture(TortureSuite):
             self.fail(f"{what}: {', '.join(bad)}")
 
     def bt_resume(self) -> None:
-        """Play again (the policy pauses when a headset goes away)"""
+        """Play again (the policy pauses when a headset goes away), first
+        leaving a recording or radio screen that browsing reached (torture
+        17 step 75: the main menu kept its cursor on Recording)"""
+        self.ready_to_play()
         audio = self.health().num("audio")
         if audio == AUDIO_PAUSED:
             self.sh("wps")
