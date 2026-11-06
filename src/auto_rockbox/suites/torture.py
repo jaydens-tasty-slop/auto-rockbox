@@ -52,11 +52,12 @@ from __future__ import annotations
 
 import re
 import sys
+import threading
 import time
 from argparse import Namespace
 from collections import deque
-from collections.abc import Callable, Iterable
-from contextlib import suppress
+from collections.abc import Callable, Generator, Iterable
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -81,6 +82,7 @@ RETURN_WAIT_S = 60          # a crashed or hung player comes back by itself with
 ASK_WAIT_S = 240            # ...one asked to (`!rom`) within this
 HOST_WAIT_S = 900           # before a boot, how long the player may take to reach the host
 SHELL_WAIT_S = 600          # the dev shell is up within this after a launch
+MIRROR_READ_S = 0.5        # the log mirror's reads; it stops within one
 LEDGER_HEAD = "run,hours,steps,failures,crashes,seed,scenarios"
 
 
@@ -370,6 +372,28 @@ class TortureSuite(Suite):
         return "\n".join(self.transcript) + "\n"
 
     # ---- the shell
+
+    @contextmanager
+    def mirror(self) -> Generator[None]:
+        """The log lines the player mirrors to the shell, each stamped as it
+        came, into the transcript: for a long step whose main thread leaves
+        the shell alone (a Bumble peer's run; the dev log ring keeps only the
+        last few KiB). A thread holds the shell meanwhile."""
+        stop, lines = threading.Event(), list[str]()
+
+        def follow() -> None:
+            with suppress(ArbError, OSError), self.shell.hold() as session:
+                while not stop.is_set():
+                    stamp = time.strftime("%H:%M:%S")
+                    lines.extend(f"{stamp} | {x}" for x in session.read(MIRROR_READ_S))
+        reader = threading.Thread(target=follow, name="log mirror", daemon=True)
+        reader.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            reader.join(MIRROR_READ_S * 4)
+            self.transcript += lines
 
     def shell_up(self) -> bool:
         try:

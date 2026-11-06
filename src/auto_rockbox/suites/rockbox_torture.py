@@ -2264,7 +2264,8 @@ def bt_headset(t: RockboxTorture) -> str:
     if track := t.library_track():
         t.sh(f"play {track}")
     try:
-        pcheadset.main(opts, limit=limit, echo=False)
+        with t.mirror():
+            pcheadset.main(opts, limit=limit, echo=False)
     except TimeoutError:
         t.fail(f"{what}: the cycles still ran after {limit} s")
     finally:

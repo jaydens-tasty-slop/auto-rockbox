@@ -13,11 +13,13 @@ whose sleeps take no time:
 from __future__ import annotations
 
 import random
+import threading
 import wave
 from collections.abc import Callable, Generator
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, tzinfo
 from pathlib import Path
+from types import TracebackType
 from typing import Any, Self
 from unittest import mock
 
@@ -26,7 +28,7 @@ import numpy as np
 from auto_rockbox import card, engine
 from auto_rockbox.engine import StepContext
 from auto_rockbox.lock import DeviceLock
-from auto_rockbox.shell import NoShell, Reply, Shell
+from auto_rockbox.shell import NoShell, Reply, Session, Shell
 from auto_rockbox.suites import rockbox_torture as rt
 from auto_rockbox.suites import torture as gen
 from auto_rockbox.target import Lcd, RunRequest, Target
@@ -192,6 +194,29 @@ def sim_run(root: Path, only: list[str], steps: int, seed: int = 3
 
 # ---------------------------------------------------------------- a Rockbox dev build's shell
 
+class MirrorSession(Session):
+    """DevShell.hold(): the log lines the player mirrors, one per read; never
+    a port"""
+
+    def __init__(self, shell: DevShell) -> None:
+        super().__init__(shell)
+        self.dev = shell
+
+    def __enter__(self) -> Session:
+        self.dev.port()
+        return self
+
+    def __exit__(self, et: type[BaseException] | None, ev: BaseException | None,
+                 tb: TracebackType | None) -> None:
+        pass
+
+    def read(self, timeout: float) -> list[str]:
+        if self.dev.mirrored:
+            return [self.dev.mirrored.pop(0)]
+        threading.Event().wait(0.01)        # real time: time.sleep is the fake clock's
+        return []
+
+
 class DevShell(Shell):
     """The shared dev shell (apps/dev_shell.c) in memory: up from boot() to
     `!rom`; CARD_DIR is the build's dev folder"""
@@ -208,6 +233,7 @@ class DevShell(Shell):
         self.bt_addr: str | None = None     # linked to
         self.sink = 0                       # enum pcm_sink_ids
         self.bt_paired = True               # the player has this PC's key
+        self.mirrored: list[str] = []       # log lines a hold() reads
         self.reset()
 
     def reset(self) -> None:
@@ -223,6 +249,9 @@ class DevShell(Shell):
         if not self.up:
             raise NoShell(f"{self.name}: no shell")
         return "/dev/ttyACM0"
+
+    def hold(self) -> Session:
+        return MirrorSession(self)
 
     def __call__(self, line: str, timeout: float = 120.0,
                  echo: Callable[[str], None] | None = None) -> Reply:

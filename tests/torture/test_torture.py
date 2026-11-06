@@ -11,6 +11,7 @@ import importlib.util
 import random
 import re
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
@@ -495,6 +496,9 @@ def test_bt_headset() -> None:
         lines.append(f"2026-11-05 12:00:09 cycle {opts.cycles}: stall at media; page:0.5; "
                      "vanished")
         (opts.out / "cycles.txt").write_text("\n".join(lines) + "\n")
+        p.dev.mirrored += ["bt: connected, handle 11", "bt: disconnected: 08"]
+        while p.dev.mirrored:               # the mirror reads them meanwhile
+            threading.Event().wait(0.01)
 
     with (tempfile.TemporaryDirectory() as tmp,
           rockbox_run(Path(tmp), "usb:10d7:b012") as (p, s, link),
@@ -507,6 +511,8 @@ def test_bt_headset() -> None:
         # reclaimed by the run's first bt step and after the peer
         assert pc.reclaimed == 2 and pc.agents == 1 and p.dev.bt_paired and p.dev.bt_addr == PC
         assert "repeat 1" in p.dev.sent and "repeat 0" in p.dev.sent
+        assert [x.split(" | ", 1)[1] for x in s.transcript if " | " in x] == [
+            "bt: connected, handle 11", "bt: disconnected: 08"]
 
 
 def test_linein_waits_out_the_auto_connect() -> None:
