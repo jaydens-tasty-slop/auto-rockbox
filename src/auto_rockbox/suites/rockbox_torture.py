@@ -141,10 +141,11 @@ FM_KHZ = (98100, 101500, 104300, 92500, 88700)
 VOLUME_DB = -20
 SHELL_LINE = 127                # apps/dev_shell.c sh_rx[128]: longer lines are cut
 
-# A message (splash, prompt) that reports a failure
+# A message (splash, prompt) that reports a failure ("No files" is an empty
+# list's notice, as an empty Shortcuts menu shows; "No file" is not)
 ERROR_MSG = re.compile(r"(?i)error|fail|not enough|memory|cannot|can't|couldn't|unable|"
                        r"invalid|corrupt|incompatible|wrong|not found|unsupported|leak|"
-                       r"denied|too (big|large|long)|no file|panic|bad ")
+                       r"denied|too (big|large|long)|no file(?!s)|panic|bad ")
 # Plugins that end in "Plugin returned error" when started without their data
 # or a file (upstream behaviour): the splash that explains it, None if none
 KNOWN_PLUGIN_ERRORS: dict[str, str | None] = {

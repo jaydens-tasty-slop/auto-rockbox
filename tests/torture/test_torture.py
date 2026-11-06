@@ -158,7 +158,8 @@ def test_progress_across_a_track_change() -> None:
 
 
 def test_message_judging() -> None:
-    assert rt.message_problems([("splash", "Bookmark Empty")]) == []
+    assert rt.message_problems([("splash", "Bookmark Empty"), ("splash", "No files")]) == []
+    assert rt.message_problems([("splash", "No file")]) == ['splash "No file"']
     prompt = ("yesno", "Not enough memory for / the database")
     assert rt.message_problems([prompt], re.compile("(?i)not enough memory")) == []
     assert rt.message_problems([prompt]) == ['yesno "Not enough memory for / the database"']
