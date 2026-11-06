@@ -342,14 +342,16 @@ class DevShell(Shell):
 
 class FakePcLink(rt.PcLink):
     """This PC's side in memory: BlueZ keeps the player's key until
-    remove(); with no key it takes a page only while its agent runs"""
+    remove(); with no key it takes a page only while its agent runs, and
+    with its key it turns down a player that lost its own (JustWorksRepairing
+    never)"""
 
     def __init__(self, transport: str = "") -> None:
         super().__init__(PLAYER, "arb_null", transport)
         self.knows, self.agent_on, self.agents, self.reclaimed = True, False, 0, 0
 
     def answers(self, player_paired: bool) -> bool:
-        ok = self.agent_on or (self.knows and player_paired)
+        ok = player_paired and self.knows if self.knows else self.agent_on
         self.knows |= ok
         return ok
 

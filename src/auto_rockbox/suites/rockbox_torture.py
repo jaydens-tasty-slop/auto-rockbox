@@ -2186,14 +2186,18 @@ def bt_reboot(t: RockboxTorture) -> str:
 
 @bt_scenario("forget", 1)
 def bt_forget(t: RockboxTorture) -> str:
-    """The player forgets this PC mid-stream and pairs with it again (a
-    bluetoothctl agent answers BlueZ's prompts): paired, streaming"""
+    """The player forgets this PC mid-stream, the PC forgets the player, and
+    the player pairs with it again (a bluetoothctl agent answers BlueZ's
+    prompts): paired, streaming. BlueZ turns down a Just Works pairing from
+    a device it still holds a key for (main.conf JustWorksRepairing, default
+    never; TS17 torture 8 step 40), so its key goes too, as a user's would."""
     pc = t.link()
     what = "forget the PC, pair again"
     secs = None
-    with t.pairing(True, discoverable=False):      # BlueZ still knows the player
-        t.sh(f"bt stack forget {pc.adapter}")
-        if t.bt_gone(what):
+    t.sh(f"bt stack forget {pc.adapter}")
+    if t.bt_gone(what):
+        pc.remove()
+        with t.pairing(True):
             secs = t.bt_reconnect(what)
     if not t.bt_paired():
         t.fail(f"{what}: this PC is not among the player's paired devices again")
