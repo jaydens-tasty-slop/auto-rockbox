@@ -225,6 +225,14 @@ def parse_status(lines: Iterable[str]) -> Status:
     return Status(-1, 0, 0, 0, "-")
 
 
+def progress_ms(s1: Status, s2: Status) -> int:
+    """How far playback moved from S1 to S2: across a track change (to the
+    next track, or the same one again) the rest of the first plus the second's"""
+    if s2.path != s1.path or s2.elapsed < s1.elapsed:
+        return s1.length - s1.elapsed + s2.elapsed
+    return s2.elapsed - s1.elapsed
+
+
 def parse_msgs(lines: Iterable[str]) -> tuple[int | None, list[tuple[str, str]]]:
     """`msgs AFTER`: the next number (None: a build without `msgs`) and each
     message as (kind, text); kind "lost" with the count of those the
@@ -846,14 +854,14 @@ class RockboxTorture(TortureSuite):
         return parse_status(self.sh("status"))
 
     def expect_playing(self, path: str | None = None, marker: str | None = None) -> bool:
-        """Fails the step unless playback progresses (playing, elapsed up by
-        1.5 s over 3 s), on PATH if given (not skipped), with no codec error
+        """Fails the step unless playback progresses (playing, 1.5 s played
+        over 3 s), on PATH if given (not skipped), with no codec error
         logged after the line holding MARKER"""
         s1 = self.playing()
         time.sleep(3)
         s2 = self.playing()
         bad = []
-        if s2.audio != AUDIO_PLAYING or s2.elapsed - s1.elapsed < 1500:
+        if s2.audio != AUDIO_PLAYING or progress_ms(s1, s2) < 1500:
             bad.append(f"not progressing (audio {s1.audio}->{s2.audio}, elapsed "
                        f"{s1.elapsed}->{s2.elapsed})")
         if path and s2.path != path:

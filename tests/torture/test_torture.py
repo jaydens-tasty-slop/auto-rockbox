@@ -143,6 +143,13 @@ def test_status_and_messages() -> None:
     assert rt.parse_msgs(["err unknown command"]) == (None, [])
 
 
+def test_progress_across_a_track_change() -> None:
+    a = rt.Status(1, 19797, 20021, 48000, "/stress/a.m4a")
+    assert rt.progress_ms(a, rt.Status(1, 3193, 20006, 48000, "/stress/b.opus")) == 3417
+    assert rt.progress_ms(a, rt.Status(1, 900, 20021, 48000, "/stress/a.m4a")) == 1124
+    assert rt.progress_ms(a, rt.Status(1, 19800, 20021, 48000, "/stress/a.m4a")) == 3
+
+
 def test_message_judging() -> None:
     assert rt.message_problems([("splash", "Bookmark Empty")]) == []
     prompt = ("yesno", "Not enough memory for / the database")
