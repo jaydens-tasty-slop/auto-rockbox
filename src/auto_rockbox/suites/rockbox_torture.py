@@ -948,8 +948,12 @@ class RockboxTorture(TortureSuite):
 
     def no_plugin(self) -> None:
         """Before a playback check: a plugin left open would fail it for the
-        wrong reason; boot again if it will not close"""
+        wrong reason; boot again if it will not close (one the random keys
+        opened from the menus, that no exit leaves: a keymap bug)"""
         if not self.close_plugin():
+            h = self.health()
+            self.fail(f"plugin {h.text('plugin')} (activity {h.num('act')}) did not exit: "
+                      f"booted again ({self.screen('plugin')})")
             self.boot()
 
     def ui_idle(self, limit: float = 90) -> None:
@@ -990,15 +994,19 @@ class RockboxTorture(TortureSuite):
         for i, k in enumerate(steps):
             self.keys("D 150 " * int(k) + f"S {last_wait if i == len(steps) - 1 else 1500}")
 
-    def menu_fail(self, problem: str) -> None:
-        """A main menu entry that did not open: its screen kept beside the step"""
-        png = self.step_file("menu", ".png")
+    def screen(self, what: str) -> str:
+        """The screen kept beside the step: its file's name, or why not"""
+        png = self.step_file(what, ".png")
         try:
             im, _ = screenshot(lambda line: self.reply(line, 60), self.target.lcd)
-            fb.scaled(im).save(png)
-            self.fail(f"{problem} ({png.name})")
         except ArbError as e:
-            self.fail(f"{problem} (no screenshot: {e})")
+            return f"no screenshot: {e}"
+        fb.scaled(im).save(png)
+        return png.name
+
+    def menu_fail(self, problem: str) -> None:
+        """A main menu entry that did not open"""
+        self.fail(f"{problem} ({self.screen('menu')})")
 
     def menu_tree(self) -> list[MenuNode]:
         """The dev `menutree` dump, once per boot"""
@@ -1396,6 +1404,13 @@ def linein_tone(t: RockboxTorture) -> str | None:
     t.no_plugin()
     t.sh("stop")                        # a sink switch under a playing track underruns
     bt = parse_bt_status(t.sh("bt stack status"))
+    if bt is not None and bt.status == BT_ON and t.pc and not t.bt_off:
+        # after a boot (no_plugin's): the auto-connect's audio link would
+        # take the output mid-tone
+        _, took = t.bt_wait(lambda s: s.status >= BT_CONNECTED, BT_CONNECT_S)
+        if took is not None:
+            time.sleep(BT_SETTLE_S)
+            bt = parse_bt_status(t.sh("bt stack status"))
     to_bt = bt is not None and bt.sink == SINK_BT
     if to_bt:
         t.sh("bt stack sink builtin")

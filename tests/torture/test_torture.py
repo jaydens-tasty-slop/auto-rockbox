@@ -507,3 +507,32 @@ def test_bt_headset() -> None:
         # reclaimed by the run's first bt step and after the peer
         assert pc.reclaimed == 2 and pc.agents == 1 and p.dev.bt_paired and p.dev.bt_addr == PC
         assert "repeat 1" in p.dev.sent and "repeat 0" in p.dev.sent
+
+
+def test_linein_waits_out_the_auto_connect() -> None:
+    """Bluetooth on with no link yet (a boot just before): the auto-connect's
+    link comes up before the tone, which then plays to the built-in output"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp), "") as (p, s, pc):
+        assert pc is not None
+        capture = Path(tmp) / "linein"
+        capture.mkdir()
+        (capture / "latest.json").write_text("{}")
+        p.dev.drop()
+        polls, bt = 0, p.dev.bt
+
+        def auto_connect(line: str) -> list[str]:
+            nonlocal polls
+            if line == "status" and p.dev.bt_addr is None:
+                polls += 1
+                if polls == 3:
+                    p.dev.bt_addr, p.dev.sink = PC, 1
+            return bt(line)
+        sent = len(p.dev.sent)
+        with (mock.patch.object(p.dev, "bt", auto_connect),
+              mock.patch.object(rt.linein, "directory", return_value=capture),
+              mock.patch.object(rt.linein, "tone_check",
+                                return_value=rt.linein.ToneCheck(heard=[], need=0))):
+            assert step(s, "linein") == []
+        cmds = p.dev.sent[sent:]
+        play = next(i for i, x in enumerate(cmds) if x.startswith("play"))
+        assert "bt stack sink builtin" in cmds[:play] and "bt stack sink bt" in cmds[play:]

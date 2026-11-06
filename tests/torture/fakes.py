@@ -206,6 +206,7 @@ class DevShell(Shell):
         self.glitch_on = ""                 # a command that underruns
         self.pc: FakePcLink | None = None   # this PC, for Bluetooth
         self.bt_addr: str | None = None     # linked to
+        self.sink = 0                       # enum pcm_sink_ids
         self.bt_paired = True               # the player has this PC's key
         self.reset()
 
@@ -286,7 +287,7 @@ class DevShell(Shell):
         cmd, _, arg = line.partition(" ")
         if cmd == "status":
             status = (3 if self.audio == 1 else 2) if self.bt_addr else 1
-            return [f"bt stack: status {status} sink {int(bool(self.bt_addr))}, irq stack used "
+            return [f"bt stack: status {status} sink {self.sink}, irq stack used "
                     "968 of 2048"] + ([f"bt connected 0: {self.bt_addr} cod 000000"]
                                       if self.bt_addr else [])
         if cmd == "list":
@@ -299,10 +300,13 @@ class DevShell(Shell):
             self.drop()
         elif cmd == "connect" and self.pc and self.pc.answers(self.bt_paired):
             self.bt_addr, self.bt_paired = arg, True
+            self.sink = 1                   # the policy routes to the headset
+        elif cmd == "sink":
+            self.sink = int(arg == "bt")
         return []
 
     def drop(self) -> None:
-        self.bt_addr = None
+        self.bt_addr, self.sink = None, 0
         if self.audio == 1:
             self.audio = 3                  # the policy pauses
 
@@ -435,7 +439,7 @@ def rockbox_run(root: Path, bt_transport: str | None = None
         pc = FakePcLink(bt_transport)
         s.pc = p.dev.pc = pc
         s.features |= {rt.BT_BUMBLE} if bt_transport else set()
-        p.dev.bt_addr = PC
+        p.dev.bt_addr, p.dev.sink = PC, 1
     with fast(p.dev.clock), mounted_at(p.card), mock.patch.object(rt.bluez, "trust"):
         s.start(root)
         try:
