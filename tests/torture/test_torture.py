@@ -309,6 +309,15 @@ def test_keys_fit_the_shell_line() -> None:
         assert " ".join(x.removeprefix("keys ") for x in p.dev.sent) == script
 
 
+def test_plugin_keys_stop_when_the_plugin_quits() -> None:
+    """Random keys go to the plugin only: none after it quit"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (p, s, _):
+        sent = len(p.dev.sent)
+        with mock.patch.object(s, "in_plugin", side_effect=[True, True, False]):
+            s.plugin_keys(["L", "S", "D", "S"])
+        assert [x for x in p.dev.sent[sent:] if x.startswith("keys")] == ["keys L", "keys S"]
+
+
 def test_library_track_backs_out_of_dead_ends() -> None:
     """A stock card's folders hold no music: the walk backs out of them and
     finds the album; no library at all: None, within LIBRARY_LS listings"""

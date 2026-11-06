@@ -928,6 +928,15 @@ class RockboxTorture(TortureSuite):
         h = self.health()
         return h.text("plugin") != "-" or h.num("act") == ACT_PLUGIN
 
+    def plugin_keys(self, tokens: list[str]) -> None:
+        """Random keys for a plugin, one at a time while it runs: once it
+        quits (a Back, or a dismissed "Unsupported format" screen) the rest
+        would work the menus instead (a stray "No files" splash)"""
+        for k in tokens:
+            if not self.in_plugin():
+                return
+            self.keys(k)
+
     def close_plugin(self) -> bool:
         """Out of any running plugin; False if no exit worked"""
         for script in PLUGIN_EXITS:
@@ -1453,7 +1462,7 @@ def video(t: RockboxTorture) -> str | None:
     h = t.health()
     t.sh(f"run {VIDEO_PLAYER} {VIDEO_DIR}/{v}")
     time.sleep(t.rng.uniform(4, 20))
-    t.keys(" ".join(t.rng.choices(["U", "D", "L", "R", "S", "200", "1000"], k=10)))
+    t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200", "1000"], k=10))
     time.sleep(2)
     # Quit is the menu's last item (Up wraps to it), but a landscape video
     # turns the keys with the picture: Up is Right then
@@ -1637,7 +1646,7 @@ def plugins(t: RockboxTorture) -> str | None:
     p = t.rng.choice(rocks)
     t.sh(f"run {ROCKS}/{cat}/{p}")
     time.sleep(3)
-    t.keys(" ".join(t.rng.choices(["U", "D", "L", "R", "S", "200"], k=20)))
+    t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200"], k=20))
     if not t.close_plugin():
         t.fail("did not exit (no way out with the player's keys: a keymap bug)")
         t.boot()
