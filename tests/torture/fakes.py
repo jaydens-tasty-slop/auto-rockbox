@@ -481,12 +481,18 @@ def rockbox_run(root: Path, bt_transport: str | None = None
             s.close()
 
 
-def step(s: rt.RockboxTorture, name: str, seed: int = 1) -> list[str]:
-    """One step as the engine runs it: the problems found"""
+def step_outcome(s: rt.RockboxTorture, name: str, seed: int = 1) -> engine.Outcome:
+    """One step as the engine runs it, with the checks' problems"""
     ctx = StepContext(1, name, s.target, s, random.Random(seed), s.out, datetime.now())
     outcome = engine.scenarios_for(s)[name].fn(ctx)
     assert not outcome.lost, outcome
-    return outcome.problems + s.check(ctx, outcome)
+    outcome.problems += s.check(ctx, outcome)
+    return outcome
+
+
+def step(s: rt.RockboxTorture, name: str, seed: int = 1) -> list[str]:
+    """One step as the engine runs it: the problems found"""
+    return step_outcome(s, name, seed).problems
 
 
 def tone_wav(path: Path, seconds: float, gap: tuple[float, float] | None = None) -> None:

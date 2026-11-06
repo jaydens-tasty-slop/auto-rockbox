@@ -36,6 +36,7 @@ from .fakes import (
     rockbox_run,
     sim_run,
     step,
+    step_outcome,
     tone_wav,
 )
 
@@ -417,7 +418,11 @@ def test_boot_and_steps() -> None:
         assert any(x.startswith("mkcheck /torture") for x in p.dev.sent)
         # what every step is checked for
         p.dev.msgs.append("splash Error accessing playlist control file")
-        assert step(s, "meta") == ['messages: splash "Error accessing playlist control file"']
+        o = step_outcome(s, "meta")
+        assert o.problems == ['messages: splash "Error accessing playlist control file"']
+        # the step file has the messages judged
+        after = o.output.split("\nAfter the step:\n", 1)[1]
+        assert "msg 1 splash Error accessing playlist control file" in after
         p.dev.msgs.append("decode ea613a3d 161280 /codectest/mp3_320.mp3")
         assert step(s, "meta") == []
         p.dev.msgs.append("decode 0badf00d 161280 /codectest/mp3_320.mp3")

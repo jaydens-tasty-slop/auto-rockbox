@@ -325,6 +325,7 @@ class TortureSuite(Suite):
 
     def check(self, step: StepContext, outcome: Outcome) -> list[str]:
         problems: list[str] = []
+        mark = len(self.transcript)
         try:
             problems += self.after_step()
             problems += self.settle()
@@ -337,6 +338,10 @@ class TortureSuite(Suite):
             except (ArbError, Lost) as b:
                 problems.append(f"no boot after it: {b}")
         self.count(step.name, failed=bool(outcome.problems or problems))
+        # the checks' commands and replies into the step file: the messages
+        # judged come from the player's list, not the step's own replies
+        if after := self.transcript[mark:]:
+            outcome.output += "\n".join(["", "After the step:", *after]) + "\n"
         return problems
 
     def recover(self, step: StepContext, outcome: Outcome) -> bool:
