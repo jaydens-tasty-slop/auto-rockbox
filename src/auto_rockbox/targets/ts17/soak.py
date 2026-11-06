@@ -5,7 +5,8 @@ presses on/off or opens settings at random, so the player cannot power
 itself off; only `poweroff` does, with the alarm set to wake it.
 
 The card holds a media set (`arb media OUT`) in one folder: OUT's codecs/
-and video/, and the tone as the folder's first file (folders sort first).
+and video/, and the tone (`arb media-tone`'s tone.mp3) as the folder's first
+file (folders sort first).
 OUT/manifest.json says which clips carry the tone and where it steps down;
 the scenarios open a file by its row in the browser, so the card must hold
 the set the manifest describes.

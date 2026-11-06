@@ -175,6 +175,23 @@ class TestStress(unittest.TestCase):
             assert f"no stress source {Path(d, 'song.flac')}" in err.getvalue(), err.getvalue()
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "no ffmpeg")
+    def test_tone(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            wav, mp3 = media.tone(Path(d))
+            with wave.open(str(wav)) as w:
+                assert (w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()) \
+                    == (2, 2, media.TONE_RATE, media.TONE_S * media.TONE_RATE)
+                pcm = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2)
+            step = media.TONE_STEP_S * media.TONE_RATE
+            for ch, hz in enumerate(media.TONE_HZ):
+                assert abs(linein.dominant_hz(pcm[:media.TONE_RATE, ch], media.TONE_RATE)
+                           - hz) < 2
+            # -12 dBFS, then STEP_DB lower from exactly TONE_STEP_S
+            assert abs(pcm[:step]).max() == 8230 and abs(pcm[step:]).max() == 2067
+            down = media.step_down(media.decode(mp3))
+            assert down is not None and abs(down - media.TONE_STEP_S) < 0.2, down
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "no ffmpeg")
     def test_codectest(self) -> None:
         with tempfile.TemporaryDirectory() as d, patch.object(media, "CODECTEST_S", 1):
             root = Path(d)

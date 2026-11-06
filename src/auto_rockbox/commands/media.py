@@ -1,6 +1,6 @@
-"""`arb media`: the codec and video test media; `arb media-codectest`: the
-torture's codec set; `arb media-stress`: the codec stress set
-(auto_rockbox.media)."""
+"""`arb media-tone`: the test tone; `arb media`: the codec and video test
+media; `arb media-codectest`: the torture's codec set; `arb media-stress`:
+the codec stress set (auto_rockbox.media)."""
 
 from __future__ import annotations
 
@@ -37,6 +37,22 @@ def media_cmd(ctx: Context, args: Namespace) -> int:
         print(f"arb media: {e}", file=sys.stderr)
         return 1
     print(args.out / "manifest.json")
+    return 0
+
+
+@command("media-tone", help="make the test tone the other sets are made from", target=False,
+         args=[arg("out", type=Path, help="output directory: tone.wav, tone.mp3")])
+def media_tone(ctx: Context, args: Namespace) -> int:
+    """Writes the test tone (see auto_rockbox.media): OUT/tone.wav, the
+    [media] tone the other sets are encoded from, and OUT/tone.mp3, the file
+    the soak's card folder and dev runs play."""
+    try:
+        files = media.tone(args.out)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"arb media-tone: {e}", file=sys.stderr)
+        return 1
+    for f in files:
+        print(f)
     return 0
 
 

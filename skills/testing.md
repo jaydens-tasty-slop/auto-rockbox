@@ -26,8 +26,10 @@ arb yp3 torture build/yp3/rockbox.elf build/torture-RUN --until 07:00 --seed 3
 - Build the image into its **own directory** and leave it alone during the
   run. Recovery reflashes that file, so rebuilding over it changes what the
   run tests.
-- **Card media comes from arb.** Torture plays `/codectest` (one clip per
-  codec, from `arb media-codectest OUT`) and the stress set
+- **Card media comes from arb.** `arb media-tone DIR` writes the test tone
+  (the `[media] tone` WAV every set is encoded from, and the MP3 the soak
+  and dev runs play). Torture plays `/codectest` (one clip per codec, from
+  `arb media-codectest OUT`) and the stress set
   (`arb media-stress OUT --source OUT/codectest/flac_16_44.flac`: `/stress`
   plus its playlist). Copy OUT's contents to the card root once, for
   example with `card-run 'cp -r OUT/. "$MP/"'`. Library scenarios skip

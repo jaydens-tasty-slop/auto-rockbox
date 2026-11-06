@@ -1,6 +1,7 @@
 """Test media for codec and video runs, made from one tone file.
 
-The tone (1 kHz left, 1.5 kHz right, stepping down 12 dB partway) is encoded
+The tone (1 kHz left, 1.5 kHz right, stepping down 12 dB partway; `arb
+media-tone` writes it, and the MP3 that the soak and dev runs play) is encoded
 into a short clip per codec Rockbox plays and into test videos, so Line In
 can tell that each file plays whole. A clip that ends after the step-down
 ends near Line In's noise floor: that is not a gap between tracks. Copied
@@ -42,6 +43,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import wave
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -55,6 +57,14 @@ CLIP_S = 12
 RATE = 48000                # decoding rate for the analysis
 VOX_RATE = 8000
 STEP_DB = 12.0
+
+# The test tone (tone()): TONE_HZ at TONE_DBFS, STEP_DB lower from TONE_STEP_S
+TONE_RATE = 44100
+TONE_S = 20
+TONE_STEP_S = 10
+TONE_HZ = (1000.0, 1500.0)      # left, right
+TONE_DBFS = -12.0
+NO_TONE = "make it with `arb media-tone DIR`"
 
 # (name, ffmpeg output arguments); the extension picks Rockbox's codec
 CODECS: list[tuple[str, list[str]]] = [
@@ -297,12 +307,32 @@ def describe(root: Path, path: Path, kind: str | None = None) -> Entry:
     return Entry(str(path.relative_to(root)), kind, duration(path), step)
 
 
+def tone(out: Path) -> list[Path]:
+    """Writes the test tone: OUT/tone.wav (16-bit stereo, the sets' source)
+    and OUT/tone.mp3 (128 kbit/s, the file the soak and dev runs play);
+    returns both"""
+    out.mkdir(parents=True, exist_ok=True)
+    n = np.arange(TONE_S * TONE_RATE)
+    gain = 32767 * 10 ** (np.where(n < TONE_STEP_S * TONE_RATE, TONE_DBFS,
+                                   TONE_DBFS - STEP_DB) / 20)
+    pcm = np.stack([gain * np.sin(2 * np.pi * hz * n / TONE_RATE) for hz in TONE_HZ], axis=1)
+    wav = out / "tone.wav"
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(len(TONE_HZ))
+        w.setsampwidth(2)
+        w.setframerate(TONE_RATE)
+        w.writeframes(pcm.astype("<i2").tobytes())
+    mp3 = out / "tone.mp3"
+    _encode(["-i", str(wav)], ["-map_metadata", "-1", "-c:a", "libmp3lame", "-b:a", "128k"], mp3)
+    return [wav, mp3]
+
+
 def make(out: Path, tone: Path, *, extra: Path | None = None, mod: Path | None = None,
          videos: Sequence[Path] = (), video_size: str = "160x128",
          echo: Callable[[str], object] = print) -> list[Entry]:
     """Writes the media and OUT/manifest.json; returns the manifest's entries"""
     if not tone.is_file():
-        raise FileNotFoundError(f"no tone file {tone}")
+        raise FileNotFoundError(f"no tone file {tone}: {NO_TONE}")
     tone_step = step_down(decode(tone))
     clip = ["-t", str(CLIP_S)]
 
@@ -379,7 +409,7 @@ def codectest(out: Path, tone: Path, *,
     """Writes the torture's codec set from TONE: OUT/codectest/, a
     CODECTEST_S clip per CODECTEST case; returns the clips"""
     if not tone.is_file():
-        raise FileNotFoundError(f"no tone {tone}")
+        raise FileNotFoundError(f"no tone file {tone}: {NO_TONE}")
     folder = out / CODECTEST_DIR
     folder.mkdir(parents=True, exist_ok=True)
     clips = []
