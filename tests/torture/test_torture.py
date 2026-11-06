@@ -489,6 +489,18 @@ def test_boot_and_steps() -> None:
         assert not any(x.startswith("fm") for x in p.dev.sent)
 
 
+def test_sink_left_on_bluetooth() -> None:
+    """A step that leaves the output on Bluetooth with no device linked
+    fails, and the output goes back to the built-in one"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp), "") as (p, s, _):
+        assert step(s, "meta") == []                    # linked to this PC: fine
+        p.dev.bt_addr, p.dev.sink = None, 1
+        assert step(s, "meta") == ["output left on Bluetooth with no device linked "
+                                   "(set back to the built-in one)"]
+        assert p.dev.sink == 0
+        assert step(s, "meta") == []
+
+
 def test_bt_setup_after_a_run_cut_short() -> None:
     """The first bt step after a run was cut short in a Bumble step: the
     adapter reclaimed, and the player, which kept this PC's key that BlueZ

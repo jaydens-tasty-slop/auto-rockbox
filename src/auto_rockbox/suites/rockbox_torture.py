@@ -765,7 +765,22 @@ class RockboxTorture(TortureSuite):
         self.read_msgs()        # those from before the run are not its own
 
     def after_step(self) -> list[str]:
-        return self.take_messages() + self.charge_check()
+        return self.take_messages() + self.charge_check() + self.sink_check()
+
+    def sink_check(self) -> list[str]:
+        """The output on Bluetooth with no device linked: a scenario forced
+        the sink (`bt stack sink bt`) and its device never came or left, and
+        every later play would sit at 0 (TS17 torture 9 steps 34-35, after
+        bt-headset). The output goes back to the built-in one."""
+        if not self.pc:
+            return []
+        for wait in (0, BT_SETTLE_S):       # a link loss's routing may be under way
+            time.sleep(wait)
+            bt = parse_bt_status(self.sh("bt stack status"))
+            if bt is None or bt.sink != SINK_BT or bt.addr is not None:
+                return []
+        self.sh("bt stack sink builtin")
+        return ["output left on Bluetooth with no device linked (set back to the built-in one)"]
 
     def busy(self, h: Health) -> str | None:
         return "a database build" if h.num("db") else None
