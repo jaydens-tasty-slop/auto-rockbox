@@ -1672,7 +1672,8 @@ def plugins(t: RockboxTorture) -> str | None:
     time.sleep(3)
     t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200"], k=20))
     if not t.close_plugin():
-        t.fail("did not exit (no way out with the player's keys: a keymap bug)")
+        t.fail(f"did not exit (no way out with the player's keys: a keymap bug; "
+               f"{t.screen('plugin')})")
         t.boot()
     return p
 
