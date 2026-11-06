@@ -129,7 +129,8 @@ declares what differs:
   `boot_settings()` (the TS17 boots with `bluetooth=off` unless its
   `bt_address` is configured).
 - `features`, what the build has that some scenarios need (`needs=`):
-  `lcd-gate`, `fm-tune`. A player without one simply does not run those
+  `lcd-gate`, `fm-tune`, `bt-hid` (a build with Bluetooth game controllers
+  and keyboards). A player without one simply does not run those
   scenarios. What every scenario relies on comes with the shared dev layer:
   Home selects the main menu's first item, and `dryoff` turns a menu
   power-off into a return to the host. The bt-*

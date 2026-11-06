@@ -50,7 +50,8 @@ SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "fs": 4, "db": 4, "usb
 FEATURE_WEIGHTS = {"sleep": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,
               "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
-BUMBLE_WEIGHTS = {"bt-headset": 2, "bt-hid": 2}
+BUMBLE_WEIGHTS = {"bt-headset": 2}
+HID_WEIGHTS = {"bt-hid": 2}             # with Bumble and a build with Bluetooth HID
 
 # ---------------------------------------------------------------- samples
 
@@ -108,6 +109,12 @@ def test_registered_for_every_rockbox_player() -> None:
         table = engine.scenarios_for(suite)
         assert {n: s.weight for n, s in table.items()} == SHARED_WEIGHTS | BT_WEIGHTS | extra
     assert all(table[n].needs == {rt.ROCKBOX, rt.BT_PC, rt.BT_BUMBLE} for n in BUMBLE_WEIGHTS)
+    with mock.patch.object(rt, "have_bumble", return_value=True), \
+            mock.patch.object(FakeTorture, "features", frozenset({rt.BT_HID})):
+        table = engine.scenarios_for(FakeTorture(FakePlayer(bt), Path("x.elf")))
+    assert {n: s.weight for n, s in table.items()} == \
+        SHARED_WEIGHTS | BT_WEIGHTS | BUMBLE_WEIGHTS | HID_WEIGHTS
+    assert table["bt-hid"].needs == {rt.ROCKBOX, rt.BT_PC, rt.BT_BUMBLE, rt.BT_HID}
     # an address in [bluetooth] is the host commands' default, not a player's
     host = Workspace(Path("/nonexistent"), {"bluetooth": {"player": PLAYER}})
     assert FakeTorture(FakePlayer(host), Path("x.elf")).pc is None

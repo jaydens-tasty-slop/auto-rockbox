@@ -21,6 +21,7 @@ from typing import Any
 
 from ...elf import Elf
 from ...suites.rockbox_torture import (
+    BT_HID,
     FM_KHZ,
     FM_TUNE,
     LCD_GATE,
@@ -94,7 +95,7 @@ class Yp3Torture(RockboxTorture):
     slow_codecs = SLOW_CODECS
     expected_msgs = EXPECTED_MSG
     charge_limit = CHARGE_LIMIT
-    features = frozenset({LCD_GATE, FM_TUNE})
+    features = frozenset({LCD_GATE, FM_TUNE, BT_HID})
     crash_lines = r"\bHANG:"        # the heartbeat watchdog's last word
 
     def __init__(self, target: Target, image: Path, **kw: Any) -> None:

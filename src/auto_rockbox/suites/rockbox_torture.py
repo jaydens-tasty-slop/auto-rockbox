@@ -39,6 +39,8 @@ What players differ in is declared by their subclass:
                    lcd-gate      gate_on() reads the LCD controller's clock
                    fm-tune       fm_tune() tunes without the radio screen
                                  (FM recordings)
+                   bt-hid        Bluetooth game controllers and keyboards
+                                 (HAVE_BLUETOOTH_HID)
 
 and hooks: boot_settings, put_card_files, prepare, gate_on, fm_tune,
 bt_link_table, bt_fail_details, and TortureSuite's records, wait_host and
@@ -95,6 +97,7 @@ LCD_GATE = "lcd-gate"           # gate_on() reads the LCD controller's clock gat
 FM_TUNE = "fm-tune"             # fm_tune() tunes without the radio screen
 BT_PC = "bt-pc"                 # this PC can be the player's headset
 BT_BUMBLE = "bt-bumble"         # and its adapter can be lent to a Bumble peer
+BT_HID = "bt-hid"               # the build takes Bluetooth input devices
 
 # The card (the dev folder's files are the suite's: card_path())
 CFGS = {
@@ -1981,15 +1984,17 @@ def usb(t: RockboxTorture) -> str:
 BtCase = Callable[[RockboxTorture], str]
 
 
-def bt_scenario(case: str, weight: int, bumble: bool = False) -> Callable[[BtCase], BtCase]:
+def bt_scenario(case: str, weight: int, bumble: bool = False,
+                needs: Iterable[str] = ()) -> Callable[[BtCase], BtCase]:
     """A bt-CASE step (RockboxTorture.bt_case around FN), needing this PC as
-    the headset; BUMBLE: it lends this PC's adapter to a Bumble peer"""
+    the headset (and NEEDS); BUMBLE: it lends this PC's adapter to a Bumble
+    peer"""
     def register(fn: BtCase) -> BtCase:
         def step(t: RockboxTorture) -> str:
             return t.bt_case(fn)
         step.__doc__ = fn.__doc__
         pc = {BT_PC, BT_BUMBLE} if bumble else {BT_PC}
-        rockbox_scenario(f"bt-{case}", weight=weight, needs=pc)(step)
+        rockbox_scenario(f"bt-{case}", weight=weight, needs=pc | set(needs))(step)
         return fn
     return register
 
@@ -2291,7 +2296,7 @@ def bt_headset(t: RockboxTorture) -> str:
     return what
 
 
-@bt_scenario("hid", 2, bumble=True)
+@bt_scenario("hid", 2, bumble=True, needs={BT_HID})
 def bt_hid(t: RockboxTorture) -> str:
     """This PC's adapter as a DualShock 4 or keyboard (`arb yp3 bt-peer
     hid`) that the player scans for and pairs with, then 4-10 random keys
