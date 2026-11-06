@@ -309,6 +309,38 @@ def test_keys_fit_the_shell_line() -> None:
         assert " ".join(x.removeprefix("keys ") for x in p.dev.sent) == script
 
 
+def test_library_track_backs_out_of_dead_ends() -> None:
+    """A stock card's folders hold no music: the walk backs out of them and
+    finds the album; no library at all: None, within LIBRARY_LS listings"""
+    def card(tree: dict[str, list[str]]) -> Callable[..., list[str]]:
+        def sh(line: str, **_: object) -> list[str]:
+            listed.append(line)
+            folder = line.removeprefix("ls ")
+            return [f"ls {folder}:", *(f"  {e} 0" for e in tree.get(folder, []))]
+        return sh
+
+    stock = {"/": ["Picture/", "Video/", "Recordings/", "codectest/", "rbtest/", "Artist/",
+                   "Single.mp3"],
+             "/Picture": ["./", "../", "001.jpg"], "/Video": ["clip.avi", "Old/"],
+             "/Video/Old": ["a.avi"], "/Recordings": [], "/codectest": ["mp3_320.mp3"],
+             "/rbtest": ["tone.mp3"], "/Artist": ["Notes/", "Album/"],
+             "/Artist/Notes": ["x.txt"], "/Artist/Album": ["01 song.flac", "cover.jpg"]}
+    listed: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (_, s, _):
+        with mock.patch.object(s, "sh", card(stock)):
+            for seed in range(20):
+                s.rng = random.Random(seed)
+                assert s.library_track(album=True) == "/Artist/Album/01 song.flac", seed
+                assert s.library_track() == "/Single.mp3", seed
+        assert "ls /codectest" not in listed and "ls /rbtest" not in listed
+        assert "ls /Video/Old" in listed                    # a dead end two folders down
+        bare = {"/": [f"D{i}/" for i in range(30)], **{f"/D{i}": ["x/", "y/"] for i in range(30)}}
+        listed.clear()
+        with mock.patch.object(s, "sh", card(bare)):
+            assert s.library_track() is None
+        assert len(listed) == rt.LIBRARY_LS
+
+
 def test_boot_and_steps() -> None:
     """A new player's suite with RockboxTorture's defaults: the settings files
     on its card over mass storage once, before the boot with the shell;

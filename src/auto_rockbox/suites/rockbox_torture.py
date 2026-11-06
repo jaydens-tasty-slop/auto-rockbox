@@ -121,6 +121,8 @@ VIDEO_PLAYER = f"{ROCKS}/viewers/videoplayer.rock"
 VIDEO_EXT = (".avi", ".mkv", ".mp4", ".mov")
 RECORDINGS = "/recordings"
 CARD_S = 180                    # a mass storage boot that puts the settings files on the card
+LIBRARY_DEPTH = 3               # folder levels library_track() looks in, the root's included
+LIBRARY_LS = 12                 # and the listings it may take
 
 # The player
 MAIN_MENU = ("files", "database", "resume", "settings", "recording", "fm",
@@ -879,21 +881,32 @@ class RockboxTorture(TortureSuite):
         return max(1, min(wait, length - 5)) if length else wait
 
     def library_track(self, album: bool = False) -> str | None:
-        """A random track of the music library (artist/album folders); ALBUM:
-        never one of the songs at the card's root"""
+        """A random track of the music library (artist/album folders, the
+        stress set too): a random walk LIBRARY_DEPTH folders deep that backs
+        out of folders without one (a stock card's Picture/, Video/, ...),
+        in at most LIBRARY_LS listings; ALBUM: never one of the songs at the
+        card's root"""
         not_library = ("codectest", self.card_dir.strip("/"))   # and torture*: the fs scenario's
-        path = ""
-        for _ in range(3):
+        listings = LIBRARY_LS
+
+        def walk(path: str, depth: int) -> str | None:
+            nonlocal listings
+            listings -= 1
             entries = ls_entries(self.sh(f"ls {path or '/'}"))
             songs = [e for e in entries if re.search(r"\.(mp3|flac)$", e, re.I)]
             if songs and (path or not album):
                 return f"{path}/{self.rng.choice(songs)}"
             dirs = [e.rstrip("/") for e in entries if e.endswith("/") and not e.startswith(".")
                     and e.rstrip("/") not in not_library and not e.startswith("torture")]
-            if not dirs:
-                return None
-            path = f"{path}/{self.rng.choice(dirs)}"
-        return None
+            self.rng.shuffle(dirs)
+            for d in dirs if depth < LIBRARY_DEPTH else ():
+                if listings == 0:
+                    break
+                if track := walk(f"{path}/{d}", depth + 1):
+                    return track
+            return None
+
+        return walk("", 1)
 
     def music(self) -> None:
         """A library track playing under a UI scenario, so health catches the
@@ -2058,7 +2071,7 @@ def bt_churn(t: RockboxTorture) -> str:
     if secs is None:
         t.fail(f"{what}: no connection within {BT_CONNECT_S} s: status {s.status}")
         return what
-    if track := t.library_track():      # test files are short
+    if track := t.library_track():        # test files are short
         t.sh(f"play {track}")
         time.sleep(2)
     t.bt_streaming(what)
