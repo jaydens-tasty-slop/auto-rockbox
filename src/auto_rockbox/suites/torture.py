@@ -136,32 +136,40 @@ def parse_health(lines: Iterable[str], words: Iterable[str] = ()) -> Health | No
 
 
 class FreeDrift:
-    """Free memory read in comparable states, per boot. The ceiling of the
-    first WINDOW readings is the reference; when the ceiling of the latest
-    WINDOW falls more than BUDGET below it, that is a leak, reported once
-    and then measured from the new level."""
+    """Free memory read in comparable states, per boot: free plus the
+    playback buffer while playback holds it (health's abuf), readings with
+    it held and without apart. A target that keeps the buffer after a stop
+    has nearly all free memory in it, and a leak shrinks the buffer, not
+    free (TS17 torture 8 step 58). Per state, the ceiling of the first
+    WINDOW readings is the reference; when the ceiling of the latest WINDOW
+    falls more than BUDGET below it, that is a leak, reported once and then
+    measured from the new level."""
 
     def __init__(self, budget: int = FREE_DRIFT, window: int = FREE_WINDOW) -> None:
         self.budget, self.window = budget, window
-        self.readings: list[int] = []
-        self.reference: int | None = None
+        self.readings: dict[bool, list[int]] = {}
+        self.reference: dict[bool, int] = {}
 
     def reset(self) -> None:
-        self.readings, self.reference = [], None
+        self.readings, self.reference = {}, {}
 
-    def add(self, free: int) -> str | None:
-        self.readings.append(free)
-        if len(self.readings) < self.window:
+    def add(self, free: int, abuf: int = 0) -> str | None:
+        held = abuf > 0
+        readings = self.readings.setdefault(held, [])
+        readings.append(free + abuf)
+        if len(readings) < self.window:
             return None
-        if self.reference is None:
-            self.reference = max(self.readings[:self.window])
+        ref = self.reference.get(held)
+        if ref is None:
+            self.reference[held] = max(readings[:self.window])
             return None
-        now = max(self.readings[-self.window:])
-        if now >= self.reference - self.budget:
+        now = max(readings[-self.window:])
+        if now >= ref - self.budget:
             return None
-        fell, self.reference = self.reference - now, now
-        return (f"free memory ceiling {now} B, {fell} B down over "
-                f"{len(self.readings)} settled readings since the boot")
+        self.reference[held] = now
+        what = "free memory and the held playback buffer" if held else "free memory"
+        return (f"{what}: ceiling {now} B, {ref - now} B down over "
+                f"{len(readings)} settled readings since the boot")
 
 
 # ---------------------------------------------------------------- the ledger
@@ -470,7 +478,7 @@ class TortureSuite(Suite):
                 return [f"{what} still running after {BUSY_WAIT_S} s"]
             time.sleep(5)
             h = self.health()
-        leak = self.drift.add(h.num(self.free_key)) if self.settled(h) else None
+        leak = self.drift.add(h.num(self.free_key), h.num("abuf")) if self.settled(h) else None
         return [leak] if leak else []
 
     # ---- boots and crashes

@@ -231,11 +231,19 @@ def test_free_drift() -> None:
     assert [d.add(90000) for _ in range(7)] == [None] * 7      # within the budget
     lows = [d.add(80000) for _ in range(8)]
     assert lows[:7] == [None] * 7
-    assert lows[7] == ("free memory ceiling 80000 B, 20000 B down over 24 settled readings "
+    assert lows[7] == ("free memory: ceiling 80000 B, 20000 B down over 24 settled readings "
                        "since the boot")
     assert [d.add(80000) for _ in range(8)] == [None] * 8      # measured from there on
+    # the playback buffer held (a target that keeps it after a stop): free is
+    # what it left, and a leak shrinks it; its readings are a state of their own
+    assert [d.add(4000, 2400000) for _ in range(8)] == [None] * 8
+    assert [d.add(80000) for _ in range(8)] == [None] * 8      # released again
+    assert [d.add(4000, 2380000) for _ in range(7)] == [None] * 7
+    assert d.add(4000, 2380000) == ("free memory and the held playback buffer: ceiling "
+                                    "2384000 B, 20000 B down over 16 settled readings "
+                                    "since the boot")
     d.reset()
-    assert d.reference is None and not d.readings
+    assert not d.reference and not d.readings
 
 
 def test_ledger() -> None:
@@ -313,7 +321,7 @@ def test_simulated_leak() -> None:
     # 3000 B a step: the first 8 readings make the reference (97000); the
     # ceiling of the last 8 (79000 at reading 14) is the first over 16 KiB below
     assert [x.step for x in failed] == [14]
-    assert failed[0].problems[0].startswith("free memory ceiling 79000 B, 18000 B down")
+    assert failed[0].problems[0].startswith("free memory: ceiling 79000 B, 18000 B down")
 
 
 def test_keys_fit_the_shell_line() -> None:

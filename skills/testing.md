@@ -104,8 +104,10 @@ def radio(step: StepContext) -> Outcome:
   check fails on a good player, fix the check first, and add a test with
   the sample that fooled it.
 - **Health between steps** (torture): faults and panics in the log, PCM
-  underruns, UI stalls over 1 s, and free memory that keeps falling. Each
-  counter has a budget. Going over it is a failure even when the step
+  underruns, UI stalls over 1 s, and free memory that keeps falling
+  (free plus the playback buffer while playback holds it, `abuf`: a port
+  that keeps the buffer after a stop has nearly all free memory in it).
+  Each counter has a budget. Going over it is a failure even when the step
   itself passed.
 
 Soak scenarios follow a player's menus, so they go in
