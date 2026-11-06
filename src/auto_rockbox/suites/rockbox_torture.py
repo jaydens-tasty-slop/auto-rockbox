@@ -702,6 +702,7 @@ class RockboxTorture(TortureSuite):
         self.bt_off = ""                # why the bt-* scenarios do nothing this run
         self.bt_recovering = False
         self.bt_lost = 0                # links a bt-* case let vanish on purpose
+        self.warming = False            # prepare()'s screen visit (its Home may boot again)
 
     # ---- the card's dev folder
 
@@ -779,6 +780,16 @@ class RockboxTorture(TortureSuite):
             if not self.health().num("db"):
                 break
             time.sleep(2)
+        # the recording screen loads the theme's skin for it at its first
+        # visit and keeps it, like every skin (~68 KB on the TS17): a visit
+        # now puts it in the free memory reference, not in a later step
+        if not self.warming and "recording" in self.main_menu:
+            self.warming = True
+            try:
+                if self.menu("recording") == ACT_RECORDING:
+                    self.home()
+            finally:
+                self.warming = False
 
     def expected_return(self, records: Records) -> str | None:
         if "power_off() (dry run" in dict(records).get("dev log (tail)", ""):
