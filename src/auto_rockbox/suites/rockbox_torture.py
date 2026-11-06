@@ -175,11 +175,14 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # Out of a plugin: ported games' pause gesture (Select+Up held) then Quit, the
 # last item (Up wraps to it), again for a start menu, once more after a banner
 # (games clear the key queue between levels); menus, long Select, Left; out of
-# a keyboard (long Left) and Text Editor's unsaved-changes menu; last, the
-# Select+Left chord three times (Rockpaint's quit on YP3_PAD and the only way
-# out of its dialogs; a half-drawn shape takes one press more)
+# a keyboard (long Left) and Text Editor's unsaved-changes menu; a long
+# Select menu that opens on its second item with Quit two below (MazezaM's,
+# on Retry level); last, the Select+Left chord three times (Rockpaint's quit
+# on YP3_PAD and the only way out of its dialogs; a half-drawn shape takes
+# one press more)
 PLUGIN_EXITS = ["SU* 800 U S", "U S", "4000 SU* 800 U S", "U S", "U S L S+ U S L L",
-                "L+ S+", "U+ S", "D S U S", "L+ 300 L 300 U S", "SL 300 SL 300 SL"]
+                "L+ S+", "U+ S", "D S U S", "L+ 300 L 300 U S", "S+ 300 D 300 D 300 S",
+                "SL 300 SL 300 SL"]
 # Before Home: Back presses, then plugin exits, for screens that ignore Home
 HOME_FIRST_KEYS = ["", "L 300 L 300 L 300 ", "SU* 800 U S ", "U S L S+ U S L L ", "L+ S+ ",
                    "U+ S "]
@@ -747,6 +750,11 @@ class RockboxTorture(TortureSuite):
         self.sh(f"vol {VOLUME_DB}")
         if self.charge_limit is not None:
             self.sh(f"cfg {self.card_path('t_limit.cfg')}")
+        # the run's light look from the boot on: crawl restores the settings
+        # it saved at its first step, and a YP3's default cabbiev2 then came
+        # back after every crawl step, refusing Vorbis and Opus and taking
+        # 35 KB of free memory
+        self.sh(f"cfg {self.card_path('t_default.cfg')}")
         super().prepare()
         # the boot-time database update stops playback and its commit takes
         # all free RAM: steps start after it

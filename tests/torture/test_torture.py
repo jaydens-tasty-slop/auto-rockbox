@@ -461,6 +461,8 @@ def test_boot_and_steps() -> None:
         (req,) = p.requests
         assert (req.seconds, req.usb, req.settings) == (0, True, {})
         assert f"play {rt.PROBE}" in p.dev.sent and not any("t_limit" in x for x in p.dev.sent)
+        # the run's light look from the boot on, before crawl saves its settings
+        assert "cfg /rbtest/t_default.cfg" in p.dev.sent
         assert (s.tone, s.theme_cfgs[-1]) == ("/rbtest/tone.mp3", "/rbtest/t_default.cfg")
         assert s.library_track(album=True) is None      # codectest/ and rbtest/ are no albums
         for name in ("codecs", "decode", "meta", "fs"):
