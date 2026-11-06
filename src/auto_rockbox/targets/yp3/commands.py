@@ -15,6 +15,7 @@ from ... import fb
 from ...elf import Elf
 from ...registry import Context, arg, command
 from ...run import parse_settings, report, run
+from ...shell import NoShell
 from ...shot import screenshot
 from . import Yp3, Yp3Run, prof
 from .image import ImageError, parse_blob, parse_push
@@ -23,6 +24,7 @@ from .retained import decode_fault, decode_threads, trace_names
 from .rom import IMAGE_SIZE, PMU_REASON, PMU_RESET, PMU_WAKE, Op, wait_rom
 
 YP3 = {"yp3"}
+SHELL_UP_S = 60                 # a stay-up --usb run's shell port appears within this
 
 
 def _yp3(ctx: Context) -> Yp3:
@@ -83,8 +85,26 @@ def run_cmd(ctx: Context, args: Namespace) -> int:
     r = run(t, req, args.shots)
     if req.seconds == 0:
         print("it stays up (return=0)")
+        if req.usb:     # the port comes a few seconds after the launch
+            port = _shell_port(t, SHELL_UP_S)
+            if port is None:
+                print(f"no dev shell port {SHELL_UP_S} s after the boot", file=sys.stderr)
+                return 3
+            print(f"dev shell on {port}")
         return 0
     return report(t, req, r)
+
+
+def _shell_port(t: Yp3, seconds: float) -> str | None:
+    """The dev shell's serial port once it appears, for up to SECONDS"""
+    end = time.monotonic() + seconds
+    while True:
+        try:
+            return t.shell().port()
+        except NoShell:
+            if time.monotonic() >= end:
+                return None
+            time.sleep(1)
 
 
 @command("flash", help="write an image's changed sectors (an ELF is packaged first)",
