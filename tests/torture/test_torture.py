@@ -376,6 +376,21 @@ def test_boot_and_steps() -> None:
         assert not any(x.startswith("fm") for x in p.dev.sent)
 
 
+def test_bt_setup_after_a_run_cut_short() -> None:
+    """The first bt step after a run was cut short in a Bumble step: the
+    adapter reclaimed, and the player, which kept this PC's key that BlueZ
+    forgot, paired again at once (no connects that cannot get through)"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp), "") as (p, s, pc):
+        assert pc is not None
+        s.bt_known, pc.knows, pc.reclaimed = False, False, 0     # a new run
+        p.dev.drop()
+        sent = len(p.dev.sent)
+        assert step(s, "bt-churn") == []
+        assert pc.reclaimed == 1 and pc.agents == 1 and pc.knows and p.dev.bt_addr == PC
+        connects = [x for x in p.dev.sent[sent:] if x.startswith("bt stack connect")]
+        assert len(connects) == 2, connects         # the pairing's, churn's own
+
+
 def test_bt_forget_and_pair_again() -> None:
     """bt-forget: the player forgets this PC and pairs again through the
     agent; a setup that finds both keys gone (a Bumble peer's step cut
@@ -461,5 +476,6 @@ def test_bt_headset() -> None:
         problems = step(s, "bt-headset")
         assert len(problems) == 1 and problems[0].endswith(
             " ok, 1 lost: cycle 7: stall at media; page:0.5; vanished"), problems
-        assert pc.reclaimed == 1 and pc.agents == 1 and p.dev.bt_paired and p.dev.bt_addr == PC
+        # reclaimed by the run's first bt step and after the peer
+        assert pc.reclaimed == 2 and pc.agents == 1 and p.dev.bt_paired and p.dev.bt_addr == PC
         assert "repeat 1" in p.dev.sent and "repeat 0" in p.dev.sent

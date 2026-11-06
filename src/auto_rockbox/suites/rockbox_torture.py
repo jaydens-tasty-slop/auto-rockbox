@@ -483,16 +483,19 @@ class PcLink:
             return ""
 
     def find(self) -> bool:
-        """The adapter, the player among its paired devices, its D-Bus path"""
+        """The adapter's address; whether the player is among its paired
+        devices, with its D-Bus path"""
         try:
             tree = subprocess.run(["busctl", "--list", "tree", "org.bluez"], capture_output=True,
                                   text=True, timeout=20, check=False).stdout
         except (OSError, subprocess.TimeoutExpired):
             return False
         m = re.search(r"Controller ([0-9A-F:]{17})", self.ctl("show"))
-        if not m or self.player not in self.ctl("devices", "Paired"):
+        if not m:
             return False
         self.adapter = m[1]
+        if self.player not in self.ctl("devices", "Paired"):
+            return False
         dev = "dev_" + self.player.replace(":", "_")
         self.path = next((p for p in tree.split() if p.endswith(dev)), "")
         return bool(self.path)
@@ -1039,10 +1042,13 @@ class RockboxTorture(TortureSuite):
         if self.bt_off:
             return False
         if not self.bt_known:
-            if not pc.find():
-                self.bt_off = (f"BlueZ has no adapter, or no paired {pc.player} "
-                               f"([targets.{self.target.name}] bt_address)")
+            # a run cut short in a Bumble step leaves the adapter detached
+            # from btusb and the player unknown to BlueZ: reclaim() takes
+            # care of the first, the pairing below of the second
+            if not pc.reclaim():
+                self.bt_off = "BlueZ has no adapter (bluetoothctl show)"
                 return False
+            pc.find()
             if not any("bt stack: status" in ln for ln in self.sh("bt stack status")):
                 self.bt_off = "no Bluetooth in this build"
                 return False
@@ -1063,8 +1069,12 @@ class RockboxTorture(TortureSuite):
         # not paired: the crawl reaches Forget, bt-headset and bt-hid forget
         # this PC on both sides
         paired = self.bt_paired()
-        with self.pairing(not paired):
-            for by_pc in (False, True):
+        # the player kept this PC's key but BlueZ forgot the player (a run cut
+        # short in a Bumble step): no connect gets through, straight to both
+        # keys gone
+        stale = paired and not pc.find()
+        with self.pairing(not paired and not stale):
+            for by_pc in () if stale else (False, True):
                 # the player's link or page to another device (auto-connect
                 # takes the most recent one), or its own page of the PC,
                 # would keep the next try from getting through
