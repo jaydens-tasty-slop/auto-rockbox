@@ -993,7 +993,7 @@ class RockboxTorture(TortureSuite):
         hitches the UI causes. Not under a plugin the last step's keys left
         open: one holding the audio buffer (an image the monkey opened) made
         the shell's play panic (audio_reset_buffer(): OOM!)."""
-        self.no_plugin()
+        self.ready_to_play()
         if self.health().num("audio") != AUDIO_PLAYING and (track := self.library_track()):
             self.sh(f"play {track}")
             time.sleep(2)
@@ -1024,15 +1024,20 @@ class RockboxTorture(TortureSuite):
                 return True
         return not self.in_plugin()
 
-    def no_plugin(self) -> None:
-        """Before a playback check: a plugin left open would fail it for the
-        wrong reason; boot again if it will not close (one the random keys
-        opened from the menus, that no exit leaves: a keymap bug)"""
+    def ready_to_play(self) -> None:
+        """Before a playback check: a plugin left open, or the recording or
+        radio screen (they hold the audio: a play does nothing), would fail
+        it for the wrong reason. Boot again if a plugin will not close (one
+        the random keys opened from the menus, that no exit leaves: a keymap
+        bug); Home leaves those screens (random keys reach them, and Left
+        there is the gain)."""
         if not self.close_plugin():
             h = self.health()
             self.fail(f"plugin {h.text('plugin')} (activity {h.num('act')}) did not exit: "
                       f"booted again ({self.screen('plugin')})")
             self.boot()
+        elif self.health().num("act") in (ACT_RECORDING, ACT_FM):
+            self.home()
 
     def ui_idle(self, limit: float = 90) -> None:
         """Waits while the UI thread misses its 10 s ping (e.g. a free-space
@@ -1525,7 +1530,7 @@ def codecs(t: RockboxTorture) -> str | None:
     """A /codectest file, mostly on Now Playing (the worst case): it plays on"""
     if not (f := t.pick_codec_file()):
         return None
-    t.no_plugin()
+    t.ready_to_play()
     h = t.health()
     t.sh(f"play {CODECTEST}/{f}")
     if t.rng.random() < 0.7:
@@ -1542,7 +1547,7 @@ def decode(t: RockboxTorture) -> str | None:
     else works; after_step compares its decode hash with earlier plays"""
     if not (f := t.pick_codec_file()):
         return None
-    t.no_plugin()
+    t.ready_to_play()
     t.sh("stop")
     h = t.health()
     t.sh(f"play {CODECTEST}/{f}")
@@ -1569,11 +1574,11 @@ def linein_tone(t: RockboxTorture) -> str | None:
     latest = directory / "latest.json"
     if not latest.exists() or time.time() - latest.stat().st_mtime > 5:
         return "skipped: no Line In capture running (arb linein serve)"
-    t.no_plugin()
+    t.ready_to_play()
     t.sh("stop")                        # a sink switch under a playing track underruns
     bt = parse_bt_status(t.sh("bt stack status"))
     if bt is not None and bt.status == BT_ON and t.pc and not t.bt_off:
-        # after a boot (no_plugin's): the auto-connect's audio link would
+        # after a boot (ready_to_play's): the auto-connect's audio link would
         # take the output mid-tone
         _, took = t.bt_wait(lambda s: s.status >= BT_CONNECTED, BT_CONNECT_S)
         if took is not None:
@@ -1642,7 +1647,7 @@ def video(t: RockboxTorture) -> str | None:
     if not vids:
         return f"skipped: no videos in {VIDEO_DIR}"
     v = t.rng.choice(vids)
-    t.no_plugin()
+    t.ready_to_play()
     h = t.health()
     t.sh(f"run {VIDEO_PLAYER} {VIDEO_DIR}/{v}")
     time.sleep(t.rng.uniform(4, 20))
@@ -1676,7 +1681,7 @@ def codecmix(t: RockboxTorture) -> str | None:
     seq = t.rng.sample(pool, t.rng.randint(3, 5))
     if t.rng.random() < 0.3:            # never last: the last one must play
         seq.insert(t.rng.randrange(len(seq) - 1), UNSUPPORTED)
-    t.no_plugin()
+    t.ready_to_play()
     h = t.health()
     for f in seq[:-1]:
         t.sh(f"play {f}")
@@ -1694,7 +1699,7 @@ def codecmix(t: RockboxTorture) -> str | None:
 def shuffle(t: RockboxTorture) -> str:
     """The codec stress playlist shuffled, with skips and seeks across
     codecs: the last track must play"""
-    t.no_plugin()
+    t.ready_to_play()
     h = t.health()
     t.sh(f"playlist {STRESS_PLAYLIST} shuffle")
     t.sh("wps")

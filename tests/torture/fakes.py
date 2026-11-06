@@ -242,6 +242,7 @@ class DevShell(Shell):
 
     def reset(self) -> None:
         self.audio, self.path, self.started = 0, "-", 0.0
+        self.act = 1                        # enum current_activity: the main menu
         self.underruns, self.stalls, self.log = 0, 0, [f"Rockbox on {self.name}"]
         self.msgs: list[str] = []           # "KIND TEXT", numbered from 1
 
@@ -279,8 +280,10 @@ class DevShell(Shell):
                 self.underruns = self.stalls = 0
             return [f"health up 30 s audio {self.audio} elapsed {self.elapsed()}/233046 "
                     f"underruns {self.underruns}/0 stalls {self.stalls} maxstall 0 ui_late 0 "
-                    "ui_age 6 free 18912 cpu 64 act 1 plugin - db 0"]
-        if cmd == "play" and "/missing-" in arg and not self.stuck_on_missing:
+                    f"ui_age 6 free 18912 cpu 64 act {self.act} plugin - db 0"]
+        if cmd == "play" and self.act == 3:
+            pass                            # the recording screen holds the audio
+        elif cmd == "play" and "/missing-" in arg and not self.stuck_on_missing:
             self.audio, self.path = 0, "-"
         elif cmd == "play":
             self.audio, self.path, self.started = 1, arg, self.clock.now
@@ -316,6 +319,8 @@ class DevShell(Shell):
             return self.bt(arg.removeprefix("stack "))
         elif line == "set bluetooth":
             return ["bluetooth: on"]
+        elif cmd == "keys" and "UL" in arg.split():
+            self.act = 1                    # Home
         elif cmd == "keys" and "S" in arg.split() and self.audio == 3:
             self.audio = 1                  # the WPS resumes
         return []

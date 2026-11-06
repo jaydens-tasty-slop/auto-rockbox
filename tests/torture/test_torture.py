@@ -539,6 +539,12 @@ def test_boot_and_steps() -> None:
         p.dev.stuck_on_missing = False
         assert s.tally == {"codecs": [1, 0], "decode": [1, 0], "meta": [5, 2], "fs": [2, 1],
                            "missing": [2, 1]}
+        # the recording screen left up by the last step's keys (it holds the
+        # audio, and Left there is the gain): Home leaves it before a play
+        p.dev.act = 3
+        sent = len(p.dev.sent)
+        assert step(s, "codecs") == []
+        assert p.dev.act == 1 and any("UL" in x for x in p.dev.sent[sent:])
         # a recording from the microphone: the shared shell tunes only with its screen
         step(s, "record", seed=3)
         assert any(x.startswith("rec ") and " mic mono " in x for x in p.dev.sent)
