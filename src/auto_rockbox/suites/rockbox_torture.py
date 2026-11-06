@@ -8,12 +8,13 @@ its dev folder is and adds what only its own shell or hardware has.
     arb yp3 torture build/torture-elf/rockbox.elf build/torture/RUN --hours 6
 
 The card is set up as for the dev loop (the port's docs/testing.md, Card
-setup): /codectest/ test files (`arb media`), /stress/ and
+setup): /codectest/ test files (`arb media-codectest`), /stress/ and
 "/Playlists/Stress test.m3u8" (`arb media-stress`), /.rockbox/rocks/ plugins
-and the codecs built with the core, a music library (artist/album folders),
-a built database, the cabbiev2 theme, /video/ videos, and tone.mp3 in the
-player's dev folder (`card_dir`, the build's DEV_CARD_DIR: 1 kHz left, 1.5
-kHz right, 12 dB down after 10 s). The settings files the steps load
+and the codecs built with the core, a music library (artist/album folders;
+library scenarios skip without one), a built database, the cabbiev2 theme,
+/video/ videos (`arb media`'s video/), and tone.mp3 in the player's dev
+folder (`card_dir`, the build's DEV_CARD_DIR; `arb media-tone`: 1 kHz left,
+1.5 kHz right, 12 dB down after 10 s). The settings files the steps load
 (cfgs()) go into the dev folder before the run's first boot, with the player
 as USB mass storage (capability "storage"; put_card_files), unless the
 player puts them there at every boot.
