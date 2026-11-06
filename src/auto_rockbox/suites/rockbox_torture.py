@@ -105,9 +105,13 @@ CFGS = {
                    "lcd sleep after backlight off: 2\n",
     "t_wake.cfg": "backlight timeout: 15\nbacklight timeout plugged: 15\n"
                   "lcd sleep after backlight off: 5\n",
+    # English by name: the built-in one is "lang: " (no file), and a .cfg
+    # with that keeps whatever language a crawl selected, so t_base.cfg's
+    # restore left the menus in Chinese (TS17 torture 10)
     "t_default.cfg": "wps: -\nsbs: -\nfms: -\niconset: -\nviewers iconset: -\n"
                      "backdrop: -\nforeground color: FFFFFF\nbackground color: 000000\n"
-                     "selector type: bar (gradient)\nstatusbar: top\nui viewport: -\n",
+                     "selector type: bar (gradient)\nstatusbar: top\nui viewport: -\n"
+                     "lang: /.rockbox/langs/english.lng\n",
 }
 THEMES = ("/.rockbox/themes/cabbiev2.cfg", "/.rockbox/themes/rockbox_failsafe.cfg")
 CODECTEST = f"/{media.CODECTEST_DIR}"            # `arb media-codectest`
