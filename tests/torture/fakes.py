@@ -351,8 +351,11 @@ class FakePcLink(rt.PcLink):
     def __init__(self, transport: str = "") -> None:
         super().__init__(PLAYER, "arb_null", transport)
         self.knows, self.agent_on, self.agents, self.reclaimed = True, False, 0, 0
+        self.dead, self.usb_resets = False, 0      # links with no data, until a USB reset
 
     def answers(self, player_paired: bool) -> bool:
+        if self.dead:
+            return False
         ok = player_paired and self.knows if self.knows else self.agent_on
         self.knows |= ok
         return ok
@@ -391,6 +394,10 @@ class FakePcLink(rt.PcLink):
 
     def reclaim(self, secs: float = 30) -> bool:
         self.reclaimed += 1
+        return True
+
+    def usb_reset(self) -> bool:
+        self.dead, self.usb_resets = False, self.usb_resets + 1
         return True
 
     def start_routing(self) -> None:

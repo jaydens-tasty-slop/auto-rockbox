@@ -165,3 +165,10 @@ gated by a feature when a player may lack what they need.
   packet by packet before suspecting the peer. In this port, a sink
   failure turned out to be a race inside the stack: it streams silence
   until its mixer has PCM.
+- This PC's adapter can fail too. After one bt-headset step, its links
+  came up and paired but carried none of the player's data (SDP and
+  AVDTP unanswered; the peer's btsnoop showed nothing received). Neither
+  HCI_Reset (BlueZ power off and on, Bumble's start) nor a reboot of the
+  player cleared it; `usbreset VID:PID` did. Torture's Bluetooth setup
+  now USB-resets the adapter once before it fails, and notes it when that
+  was the fix.

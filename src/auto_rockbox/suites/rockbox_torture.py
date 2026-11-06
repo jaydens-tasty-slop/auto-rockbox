@@ -597,6 +597,15 @@ class PcLink:
             time.sleep(1)
         return False
 
+    def usb_reset(self) -> bool:
+        """A USB reset of the adapter, then BlueZ has it again: its links had
+        come up with no data on them (LMP ran; the player's L2CAP never
+        arrived), which BlueZ's and Bumble's HCI_Resets left as it was (TS17
+        torture 9, 2026-11-05, after a bt-headset step)"""
+        bluez.give_back(self.transport, reset=True)
+        time.sleep(6)
+        return self.reclaim()
+
     def connect(self) -> None:
         self.last_connect = self.ctl("connect", self.player, timeout=40)
 
@@ -1207,6 +1216,22 @@ class RockboxTorture(TortureSuite):
             finally:
                 self.bt_recovering = False
             return False
+        if not self.bt_recovering:
+            # this PC's adapter may be the one at fault: a USB reset, once
+            self.bt_recovering = True
+            try:
+                if not pc.usb_reset():
+                    self.fail("bt setup: BlueZ did not get this PC's adapter back after a USB "
+                              "reset: bt off for this run")
+                    self.bt_off = "BlueZ lost this PC's adapter"
+                    return False
+                if self.bt_ready():         # a failure there is recorded there
+                    self.note("this PC's adapter needed a USB reset (links came up with no "
+                              "data); the player then connected")
+                    return True
+                return False
+            finally:
+                self.bt_recovering = False
         self.fail(f"bt setup: no connection from either side within {BT_CONNECT_S} s: status "
                   f"{s.status}, player linked to {s.addr or 'nothing'}, paired "
                   f"{self.bt_paired()}, PC sees {'connected' if pc.connected() else 'no link'}")

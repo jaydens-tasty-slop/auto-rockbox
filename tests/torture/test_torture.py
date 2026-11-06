@@ -534,18 +534,31 @@ def test_bt_forget_and_pair_again() -> None:
         p.dev.drop()
         assert step(s, "bt-churn") == []
         assert pc.agents == 2 and p.dev.bt_addr == PC
-        # nothing answers its page: the setup fails, both sides tried
+        # nothing answers its page: the setup fails, both sides tried, and
+        # again after a USB reset of this PC's adapter
         p.dev.bt_paired, pc.knows = False, False
         p.dev.drop()
         with mock.patch.object(FakePcLink, "answers", return_value=False):
             problems = step(s, "bt-churn")
         assert len(problems) == 1 and problems[0].startswith(
             "bt setup: no connection from either side within 25 s"), problems
-        assert "paired False" in problems[0] and pc.agents == 4
-        (fail,) = Path(tmp).glob("*-bt-fail.txt")
+        assert "paired False" in problems[0] and pc.agents == 6 and pc.usb_resets == 1
+        (fail, _) = sorted(Path(tmp).glob("*-bt-fail*.txt"), key=lambda f: len(f.name))
         text = fail.read_text()
         assert "--- bluetoothctl connect" in text and "--- sh log" in text
         assert "lmp" not in text and "link table" not in text   # a player's own traces only
+
+
+def test_bt_setup_usb_reset() -> None:
+    """Links that come up with no data, this PC's adapter's fault
+    (2026-11-05): the setup USB-resets the adapter once, and the player
+    then connects"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp), "") as (p, s, pc):
+        assert pc is not None
+        p.dev.drop()
+        pc.dead = True
+        assert step(s, "bt-churn") == []
+        assert pc.usb_resets == 1 and p.dev.bt_addr == PC
 
 
 def test_bt_capture() -> None:
