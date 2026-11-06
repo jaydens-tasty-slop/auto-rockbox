@@ -22,7 +22,7 @@ from auto_rockbox.workspace import Workspace
 from tests.torture.fakes import DevShell, fast, mounted_at, step
 
 SHARED = {"codecs", "decode", "linein", "video", "codecmix", "shuffle", "skips", "folders",
-          "longplay", "theme", "plugins", "db", "record", "fs", "sdodd", "meta", "usb",
+          "longplay", "theme", "plugins", "db", "record", "fs", "sdodd", "meta", "missing", "usb",
           "menus", "monkey", "dbdeep", "recui", "fmui", "crawl"}
 NOT_TS17 = {"sleep", "fm"}      # the YP3's LCD gate read and its own FM commands
 BT = {"bt-onoff", "bt-pcdisc", "bt-pcpower", "bt-avrcp", "bt-churn", "bt-disturb",

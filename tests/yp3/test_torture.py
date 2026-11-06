@@ -25,7 +25,7 @@ from tests.torture.fakes import PC, PLAYER, DevShell, FakePcLink, fast, step
 
 YP3_WEIGHTS = {"codecs": 12, "skips": 6, "monkey": 8, "plugins": 6, "fs": 4, "db": 4, "usb": 2,
                "longplay": 4, "record": 8, "recui": 4, "fm": 6, "sleep": 4, "sdodd": 4,
-               "meta": 4, "theme": 4, "menus": 6, "fmui": 4, "dbdeep": 4, "crawl": 16,
+               "meta": 4, "missing": 2, "theme": 4, "menus": 6, "fmui": 4, "dbdeep": 4, "crawl": 16,
                "codecmix": 8, "shuffle": 8, "folders": 4, "decode": 10, "linein": 4,
                "video": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,

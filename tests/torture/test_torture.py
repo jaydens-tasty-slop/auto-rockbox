@@ -47,7 +47,7 @@ LEDGER = PORT / "docs/torture-runs.csv"
 SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "fs": 4, "db": 4, "usb": 2,
                   "monkey": 8, "menus": 6, "dbdeep": 4, "crawl": 16, "recui": 4, "fmui": 4,
                   "longplay": 4, "record": 8, "sdodd": 4, "meta": 4, "theme": 4, "codecmix": 8,
-                  "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "video": 4}
+                  "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "video": 4, "missing": 2}
 FEATURE_WEIGHTS = {"sleep": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,
               "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
@@ -530,7 +530,15 @@ def test_boot_and_steps() -> None:
         assert step(s, "meta") == []
         p.dev.glitch_on = "mkfiles"
         assert step(s, "fs") == ["underruns +1"]
-        assert s.tally == {"codecs": [1, 0], "decode": [1, 0], "meta": [5, 2], "fs": [2, 1]}
+        p.dev.glitch_on = ""
+        # a play of a missing file stops; one that sits in "playing" fails
+        assert step(s, "missing") == []
+        p.dev.stuck_on_missing = True
+        (problem,) = step(s, "missing")
+        assert problem.startswith("still playing (/rbtest/missing-") and "a missing file" in problem
+        p.dev.stuck_on_missing = False
+        assert s.tally == {"codecs": [1, 0], "decode": [1, 0], "meta": [5, 2], "fs": [2, 1],
+                           "missing": [2, 1]}
         # a recording from the microphone: the shared shell tunes only with its screen
         step(s, "record", seed=3)
         assert any(x.startswith("rec ") and " mic mono " in x for x in p.dev.sent)

@@ -236,6 +236,7 @@ class DevShell(Shell):
         self.sink = 0                       # enum pcm_sink_ids
         self.bt_paired = True               # the player has this PC's key
         self.mirrored: list[str] = []       # log lines a hold() reads
+        self.stuck_on_missing = False       # a play of a missing file sits at 0/0
         self.reset()
 
     def reset(self) -> None:
@@ -278,7 +279,9 @@ class DevShell(Shell):
             return [f"health up 30 s audio {self.audio} elapsed {self.elapsed()}/233046 "
                     f"underruns {self.underruns}/0 stalls {self.stalls} maxstall 0 ui_late 0 "
                     "ui_age 6 free 18912 cpu 64 act 1 plugin - db 0"]
-        if cmd == "play":
+        if cmd == "play" and "/missing-" in arg and not self.stuck_on_missing:
+            self.audio, self.path = 0, "-"
+        elif cmd == "play":
             self.audio, self.path, self.started = 1, arg, self.clock.now
         elif cmd == "stop":
             self.audio, self.path = 0, "-"

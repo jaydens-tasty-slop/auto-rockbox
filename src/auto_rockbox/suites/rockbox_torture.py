@@ -2131,6 +2131,24 @@ def meta(t: RockboxTorture) -> str | None:
     return track
 
 
+@rockbox_scenario("missing", weight=2)
+def missing(t: RockboxTorture) -> str:
+    """A play of a file that is not there, sometimes over music: playback
+    stops as at a playlist's end. It sat in "playing" at 0/0 for good, the
+    track's metadata never coming (TS17, 2026-11-06)."""
+    if t.rng.random() < 0.5:
+        t.music()
+    path = f"{t.card_dir}/missing-{t.rng.randint(0, 9999)}.mp3"
+    h = t.health()
+    t.sh(f"play {path}")
+    time.sleep(4)
+    if (s := t.playing()).audio == AUDIO_PLAYING:
+        t.fail(f"still playing ({s.path} at {s.elapsed}/{s.length} ms) after a play "
+               "of a missing file")
+    t.check_health(h)
+    return path
+
+
 @rockbox_scenario("usb", weight=2)
 def usb(t: RockboxTorture) -> str:
     """A simulated unplug and replug during playback"""
