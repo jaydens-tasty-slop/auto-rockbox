@@ -206,6 +206,10 @@ def test_other_replies() -> None:
     assert [(n.path, n.kind, n.name) for n in rt.parse_menutree(MENUTREE)] == [
         ("8.2", "F", "Running Time"), ("8.3", "F", "Legal Notices"),
         ("8.4", "F", "Debug (Keep Out!)"), ("9", "V", "Shortcuts")]
+    assert rt.parse_sel(["sel 5/10 draw 166 | Rockbox | FM Radio"]) == \
+        rt.Sel(5, 10, 166, "FM Radio")
+    assert rt.parse_sel(["sel 2/10 draw 9 | Rockbox |"]) == rt.Sel(2, 10, 9, "")
+    assert rt.parse_sel(["err unknown command"]) is None
     assert rt.parse_bt_status(BT_STATUS) == rt.BtState(3, 1, 968, 2048, "AA:BB:CC:DD:EE:10")
     off = rt.parse_bt_status(["bt stack: status 1 sink 0, irq stack used 1208 of 2048"])
     assert off == rt.BtState(1, 0, 1208, 2048, None)
@@ -350,8 +354,10 @@ class SelList:
     (wrapping) unless the UI drops them (the Nth presses in DROP, counted
     from 1), Select opens the next level with its first item selected"""
 
-    def __init__(self, drop: set[int], start: int = 0, count: int = 10) -> None:
+    def __init__(self, drop: set[int], start: int = 0, count: int = 10,
+                 names: list[str] | None = None) -> None:
         self.drop, self.at, self.count = drop, start, count
+        self.names = names or [f"item {i}" for i in range(count)]
         self.presses = self.draws = 0
         self.selected: list[int] = []
 
@@ -360,7 +366,7 @@ class SelList:
             return ["health up 30 s audio 0 elapsed 0/0 underruns 0/0 stalls 0 maxstall 0 "
                     "ui_late 0 ui_age 6 free 18912 cpu 64 act 3 plugin - db 0"]
         assert line == "sel", line
-        return [f"sel {self.at}/{self.count} draw {self.draws} | Menu | item {self.at}"]
+        return [f"sel {self.at}/{self.count} draw {self.draws} | Menu | {self.names[self.at]}"]
 
     def keys(self, script: str) -> None:
         for k in script.split():
@@ -380,6 +386,7 @@ def test_walk_confirms_each_level() -> None:
     entry starts wherever the selection was; a build without `sel` gets the
     keys blind"""
     with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (p, s, _):
+        s.tree = []
         ui = SelList(drop={2, 4})
         with mock.patch.object(s, "sh", ui.sh), mock.patch.object(s, "keys", ui.keys):
             s.walk_to("3.2.0.1", 2000)
@@ -393,6 +400,25 @@ def test_walk_confirms_each_level() -> None:
         s.walk_to("1.0", 2000)
         assert [x for x in p.dev.sent[sent:] if x.startswith(("keys", "sel"))] == \
             ["keys D 150", "sel", "keys S 1500", "sel", "keys S 2000"]
+
+
+def test_walk_finds_an_item_the_tree_left_out() -> None:
+    """The tree has no File View (its callback hides it outside Settings):
+    the walk to System at tree index 3 finds it one further down; an item
+    whose name is in no list gets a note and its index"""
+    names = ["While Playing Screen", "Playlists", "File View", "Database", "Display", "System"]
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (_, s, _):
+        tree = [n for n in names if n != "File View"]
+        s.tree = [rt.MenuNode("0", "M", "Settings")] + [
+            rt.MenuNode(f"0.{i}", "M", n) for i, n in enumerate(tree)]
+        ui = SelList(drop=set(), count=len(names), names=names)
+        with mock.patch.object(s, "sh", ui.sh), mock.patch.object(s, "keys", ui.keys):
+            s.walk_to("0.4", 2000)
+            assert ui.selected == [0, names.index("System")]
+            s.tree[-1] = rt.MenuNode("0.4", "M", "Bluetooth: Off")
+            s.walk_to("0.4", 2000)
+        assert ui.selected[2:] == [0, 4]
+        assert "'Bluetooth: Off' (menu tree 0.4) is not in the list" in s.notes[-1]
 
 
 def test_plugin_keys_stop_when_the_plugin_quits() -> None:

@@ -145,6 +145,7 @@ SHELL_LINE = 127                # apps/dev_shell.c sh_rx[128]: longer lines are 
 SEL_TRIES = 4                   # corrections a menu walk makes at one level
 SEL_SETTLE_S = 0.4              # `sel` unchanged this long: the UI took its keys
 SEL_READS = 10                  # and how many reads wait for that
+SEL_ITEM_MAX = 47               # `sel` item text kept (dev_shell.c drawn_list.item)
 
 # A message (splash, prompt) that reports a failure ("No files" is an empty
 # list's notice, as an empty Shortcuts menu shows; "No file" is not)
@@ -260,12 +261,20 @@ def parse_msgs(lines: Iterable[str]) -> tuple[int | None, list[tuple[str, str]]]
     return nxt, out
 
 
-def parse_sel(lines: Iterable[str]) -> tuple[int, int] | None:
-    """`sel`: the list drawn last's selected item and how many lists were
-    drawn so far (None: a build without `sel`)"""
+@dataclass(frozen=True)
+class Sel:
+    """`sel`: the list drawn last"""
+    index: int      # its selected item, from 0
+    count: int
+    draws: int      # lists drawn so far
+    item: str       # the selected item's text (SEL_ITEM_MAX characters)
+
+
+def parse_sel(lines: Iterable[str]) -> Sel | None:
+    """`sel` "sel N/COUNT draw D | TITLE | ITEM" (None: a build without it)"""
     for ln in lines:
-        if m := re.match(r"sel (-?\d+)/\d+ draw (\d+) ", ln):
-            return int(m[1]), int(m[2])
+        if m := re.match(r"sel (-?\d+)/(\d+) draw (\d+) \|.*\|(.*)$", ln):
+            return Sel(int(m[1]), int(m[2]), int(m[3]), m[4].strip())
     return None
 
 
@@ -973,7 +982,10 @@ class RockboxTorture(TortureSuite):
 
     def music(self) -> None:
         """A library track playing under a UI scenario, so health catches the
-        hitches the UI causes"""
+        hitches the UI causes. Not under a plugin the last step's keys left
+        open: one holding the audio buffer (an image the monkey opened) made
+        the shell's play panic (audio_reset_buffer(): OOM!)."""
+        self.no_plugin()
         if self.health().num("audio") != AUDIO_PLAYING and (track := self.library_track()):
             self.sh(f"play {track}")
             time.sleep(2)
@@ -1041,7 +1053,7 @@ class RockboxTorture(TortureSuite):
             return None
         index = self.main_menu.index(item)
         self.keys("D 150 " * index)
-        self.select_at(index)
+        self.select_named(str(index))
         self.keys("S 2500")
         act = self.health().num("act")
         if item == "database" and act == ACT_MAINMENU:
@@ -1051,27 +1063,50 @@ class RockboxTorture(TortureSuite):
 
     def walk_to(self, path: str, last_wait: int) -> None:
         """Down and Select down a `menutree` PATH from the main menu, each
-        Select on the item the path names (select_at)"""
+        Select on the item the path names (select_named)"""
         steps = path.split(".")
         for i, k in enumerate(steps):
             self.keys("D 150 " * int(k))
-            self.select_at(int(k))
+            self.select_named(".".join(steps[:i + 1]))
             self.keys(f"S {last_wait if i == len(steps) - 1 else 1500}")
 
-    def select_at(self, index: int) -> None:
+    def select_named(self, path: str) -> None:
+        """The item at menu tree PATH selected (its last level's index), and
+        it must read as the tree names it. The tree leaves out what a menu
+        callback hides from the shell's context (File View shows only once
+        Settings is the activity), so a list can hold more items than it
+        has: then Down through the list until the name is selected. A name
+        not in the list (a stale tree: an item whose text changed) gets a
+        note and the index."""
+        index = int(path.rpartition(".")[2])
+        name = next((n.name for n in self.menu_tree() if n.path == path), "")[:SEL_ITEM_MAX]
+        s = self.select_at(index)
+        if s is None or not name or s.item == name:
+            return
+        for _ in range(s.count + SEL_TRIES):     # a dropped press: another lap
+            self.keys("D 150")
+            if (at := self.selection()) is None or at.item == name:
+                return
+        self.note(f"menu walk: {name!r} (menu tree {path}) is not in the list: by index")
+        self.select_at(index)
+
+    def select_at(self, index: int) -> Sel | None:
         """Down or Up until the list on screen has item INDEX selected: the
         UI loses a press while it has not taken the last key
         (button_queue_try_post() posts one only into an empty queue), and a
-        busy UI is that slow. A build without `sel` is trusted blind."""
+        busy UI is that slow. A build without `sel` is trusted blind. The
+        list as last read."""
+        s = None
         for _ in range(SEL_TRIES):
-            at = self.selection()
-            if at is None or at == index:
-                return
-            self.keys(("D 150 " if at < index else "U 150 ") * abs(index - at))
+            s = self.selection()
+            if s is None or s.index == index:
+                return s
+            self.keys(("D 150 " if s.index < index else "U 150 ") * abs(index - s.index))
+        return s
 
-    def selection(self) -> int | None:
-        """The list on screen's selected item once `sel` stops changing (the
-        UI has drawn the keys it took); None on a build without `sel`"""
+    def selection(self) -> Sel | None:
+        """The list on screen once `sel` stops changing (the UI has drawn the
+        keys it took); None on a build without `sel`"""
         s = parse_sel(self.sh("sel"))
         for _ in range(SEL_READS):
             if s is None:
@@ -1081,7 +1116,7 @@ class RockboxTorture(TortureSuite):
             if again == s:
                 break
             s = again
-        return s[0] if s else None
+        return s
 
     def screen(self, what: str) -> str:
         """The screen kept beside the step: its file's name, or why not"""
