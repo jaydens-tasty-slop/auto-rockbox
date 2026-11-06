@@ -140,6 +140,9 @@ AUDIO_PLAYING, AUDIO_PAUSED = 1, 3          # audio_status()
 FM_KHZ = (98100, 101500, 104300, 92500, 88700)
 VOLUME_DB = -20
 SHELL_LINE = 127                # apps/dev_shell.c sh_rx[128]: longer lines are cut
+SEL_TRIES = 4                   # corrections a menu walk makes at one level
+SEL_SETTLE_S = 0.4              # `sel` unchanged this long: the UI took its keys
+SEL_READS = 10                  # and how many reads wait for that
 
 # A message (splash, prompt) that reports a failure ("No files" is an empty
 # list's notice, as an empty Shortcuts menu shows; "No file" is not)
@@ -250,6 +253,15 @@ def parse_msgs(lines: Iterable[str]) -> tuple[int | None, list[tuple[str, str]]]
         elif ln.startswith("msgs next "):
             nxt = int(ln.split()[-1])
     return nxt, out
+
+
+def parse_sel(lines: Iterable[str]) -> tuple[int, int] | None:
+    """`sel`: the list drawn last's selected item and how many lists were
+    drawn so far (None: a build without `sel`)"""
+    for ln in lines:
+        if m := re.match(r"sel (-?\d+)/\d+ draw (\d+) ", ln):
+            return int(m[1]), int(m[2])
+    return None
 
 
 def message_problems(msgs: list[tuple[str, str]],
@@ -993,7 +1005,10 @@ class RockboxTorture(TortureSuite):
         """A main menu item opened with real keys: the activity after"""
         if not self.home():
             return None
-        self.keys("D 150 " * self.main_menu.index(item) + "S 2500")
+        index = self.main_menu.index(item)
+        self.keys("D 150 " * index)
+        self.select_at(index)
+        self.keys("S 2500")
         act = self.health().num("act")
         if item == "database" and act == ACT_MAINMENU:
             self.keys("S 2500")         # out of heap while playing: "Stop playback?" yes
@@ -1001,10 +1016,38 @@ class RockboxTorture(TortureSuite):
         return act
 
     def walk_to(self, path: str, last_wait: int) -> None:
-        """Down and Select down a `menutree` PATH from the main menu"""
+        """Down and Select down a `menutree` PATH from the main menu, each
+        Select on the item the path names (select_at)"""
         steps = path.split(".")
         for i, k in enumerate(steps):
-            self.keys("D 150 " * int(k) + f"S {last_wait if i == len(steps) - 1 else 1500}")
+            self.keys("D 150 " * int(k))
+            self.select_at(int(k))
+            self.keys(f"S {last_wait if i == len(steps) - 1 else 1500}")
+
+    def select_at(self, index: int) -> None:
+        """Down or Up until the list on screen has item INDEX selected: the
+        UI loses a press while it has not taken the last key
+        (button_queue_try_post() posts one only into an empty queue), and a
+        busy UI is that slow. A build without `sel` is trusted blind."""
+        for _ in range(SEL_TRIES):
+            at = self.selection()
+            if at is None or at == index:
+                return
+            self.keys(("D 150 " if at < index else "U 150 ") * abs(index - at))
+
+    def selection(self) -> int | None:
+        """The list on screen's selected item once `sel` stops changing (the
+        UI has drawn the keys it took); None on a build without `sel`"""
+        s = parse_sel(self.sh("sel"))
+        for _ in range(SEL_READS):
+            if s is None:
+                return None
+            time.sleep(SEL_SETTLE_S)
+            again = parse_sel(self.sh("sel"))
+            if again == s:
+                break
+            s = again
+        return s[0] if s else None
 
     def screen(self, what: str) -> str:
         """The screen kept beside the step: its file's name, or why not"""

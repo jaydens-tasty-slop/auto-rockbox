@@ -345,6 +345,56 @@ def test_keys_fit_the_shell_line() -> None:
         assert " ".join(x.removeprefix("keys ") for x in p.dev.sent) == script
 
 
+class SelList:
+    """A menu as `sel` and `keys` see it: Downs and Ups move the selection
+    (wrapping) unless the UI drops them (the Nth presses in DROP, counted
+    from 1), Select opens the next level with its first item selected"""
+
+    def __init__(self, drop: set[int], start: int = 0, count: int = 10) -> None:
+        self.drop, self.at, self.count = drop, start, count
+        self.presses = self.draws = 0
+        self.selected: list[int] = []
+
+    def sh(self, line: str, timeout: float = 120.0) -> list[str]:
+        if line == "health":
+            return ["health up 30 s audio 0 elapsed 0/0 underruns 0/0 stalls 0 maxstall 0 "
+                    "ui_late 0 ui_age 6 free 18912 cpu 64 act 3 plugin - db 0"]
+        assert line == "sel", line
+        return [f"sel {self.at}/{self.count} draw {self.draws} | Menu | item {self.at}"]
+
+    def keys(self, script: str) -> None:
+        for k in script.split():
+            if k in ("D", "U"):
+                self.presses += 1
+                if self.presses not in self.drop:
+                    self.at = (self.at + (1 if k == "D" else -1)) % self.count
+                    self.draws += 1
+            elif k == "S":
+                self.selected.append(self.at)
+                self.at = 0
+                self.draws += 1
+
+
+def test_walk_confirms_each_level() -> None:
+    """A Down the UI dropped is pressed again before Select; a main menu
+    entry starts wherever the selection was; a build without `sel` gets the
+    keys blind"""
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (p, s, _):
+        ui = SelList(drop={2, 4})
+        with mock.patch.object(s, "sh", ui.sh), mock.patch.object(s, "keys", ui.keys):
+            s.walk_to("3.2.0.1", 2000)
+        assert ui.selected == [3, 2, 0, 1]
+        ui = SelList(drop=set(), start=2)
+        with mock.patch.object(s, "sh", ui.sh), mock.patch.object(s, "keys", ui.keys), \
+                mock.patch.object(s, "home", return_value=True):
+            s.menu("recording")
+        assert ui.selected == [s.main_menu.index("recording")]
+        sent = len(p.dev.sent)
+        s.walk_to("1.0", 2000)
+        assert [x for x in p.dev.sent[sent:] if x.startswith(("keys", "sel"))] == \
+            ["keys D 150", "sel", "keys S 1500", "sel", "keys S 2000"]
+
+
 def test_plugin_keys_stop_when_the_plugin_quits() -> None:
     """Random keys go to the plugin only: none after it quit"""
     with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (p, s, _):
