@@ -1,5 +1,6 @@
-"""`arb media`: the codec and video test media; `arb media-stress`: the
-codec stress set (auto_rockbox.media)."""
+"""`arb media`: the codec and video test media; `arb media-codectest`: the
+torture's codec set; `arb media-stress`: the codec stress set
+(auto_rockbox.media)."""
 
 from __future__ import annotations
 
@@ -36,6 +37,26 @@ def media_cmd(ctx: Context, args: Namespace) -> int:
         print(f"arb media: {e}", file=sys.stderr)
         return 1
     print(args.out / "manifest.json")
+    return 0
+
+
+@command("media-codectest", help="make the torture's codec set: a tone clip per codec case",
+         target=False, args=[
+             arg("out", type=Path, help="output directory: codectest/, for the card root"),
+             arg("--tone", type=Path,
+                 help="the tone (default [media] tone, build/audio/tone.wav)"),
+         ])
+def media_codectest(ctx: Context, args: Namespace) -> int:
+    """Encodes a 20 s clip of the tone per case of the torture's codec set
+    (see auto_rockbox.media). Copy OUT's contents to the card root, e.g.
+    `arb ts17 card-run 'cp -r OUT/. "$MP/"'`."""
+    tone = args.tone or ctx.ws.section("media").path("tone", "build/audio/tone.wav")
+    try:
+        clips = media.codectest(args.out, tone)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"arb media-codectest: {e}", file=sys.stderr)
+        return 1
+    print(f"{len(clips)} clips -> {args.out / media.CODECTEST_DIR}")
     return 0
 
 

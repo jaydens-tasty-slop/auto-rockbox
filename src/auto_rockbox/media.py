@@ -14,6 +14,11 @@ here), its duration and when its 12 dB step-down comes (null for none).
 Formats ffmpeg cannot write (APE, Musepack, Shorten, RealAudio, ATRAC3, WMA
 Pro, the game-music formats but MOD) are left out.
 
+The torture's codec set (OUT/codectest/, suites/rockbox_torture.py) is the
+tone again, a CODECTEST_S clip per codec at the rates, depths and bitrates
+that load each decoder most, plus WMA, which master cannot play (a file the
+torture expects to fail).
+
 The stress set is music instead: a STRESS_S clip of one source per codec,
 bitrate and rate case, tagged "<codec> <settings>" so Now Playing shows what
 plays, in OUT/stress/, and OUT/Playlists/Stress test.m3u8 to hammer through
@@ -89,6 +94,37 @@ VIDEOS: list[tuple[str, list[str]]] = [
 STRESS_S = 30
 STRESS_PLAYLIST = "Playlists/Stress test.m3u8"
 OGG_PAGES = ["-page_duration", "100000"]     # oggenc-sized pages, not 1 s
+
+CODECTEST_S = 20
+CODECTEST_DIR = "codectest"     # on the card root (rockbox_torture.CODECTEST)
+
+# (name, ffmpeg output arguments) of the torture's codec set; the name says
+# the depth and rate (kHz) where the codec has them
+CODECTEST: list[tuple[str, list[str]]] = [
+    ("aac_320.m4a", ["-c:a", "aac", "-b:a", "320k"]),
+    ("ac3_640.ac3", ["-ar", "48000", "-c:a", "ac3", "-b:a", "640k"]),
+    ("aiff_16_44.aiff", ["-ar", "44100", "-c:a", "pcm_s16be"]),
+    ("alac_16_44.m4a", ["-ar", "44100", "-sample_fmt", "s16p", "-c:a", "alac"]),
+    ("au_16_44.au", ["-ar", "44100", "-c:a", "pcm_s16be", "-f", "au"]),
+    ("flac_16_44.flac", ["-ar", "44100", "-sample_fmt", "s16", "-c:a", "flac",
+                         "-frame_size", "1024"]),
+    ("flac_16_44_std.flac", ["-ar", "44100", "-sample_fmt", "s16", "-c:a", "flac",
+                             "-frame_size", "4096"]),
+    ("flac_24_96.flac", ["-ar", "96000", "-sample_fmt", "s32", "-bits_per_raw_sample", "24",
+                         "-c:a", "flac", "-frame_size", "1024"]),
+    ("mp3_320.mp3", ["-ar", "44100", "-c:a", "libmp3lame", "-b:a", "320k"]),
+    ("opus_128.opus", ["-c:a", "libopus", "-b:a", "128k", *OGG_PAGES]),
+    ("opus_510.opus", ["-c:a", "libopus", "-b:a", "510k", *OGG_PAGES]),
+    ("speex_q10.spx", ["-ar", "32000", "-c:a", "libspeex", "-cbr_quality", "10"]),
+    ("tta_16_44.tta", ["-ar", "44100", "-sample_fmt", "s16", "-c:a", "tta"]),
+    ("vorbis_q10.ogg", ["-ar", "44100", "-c:a", "libvorbis", "-q:a", "10", *OGG_PAGES]),
+    ("vorbis_q5.ogg", ["-ar", "44100", "-c:a", "libvorbis", "-q:a", "5", *OGG_PAGES]),
+    ("wav_24_96.wav", ["-ar", "96000", "-c:a", "pcm_s24le"]),
+    ("wma_320.wma", ["-ar", "44100", "-c:a", "wmav2", "-b:a", "320k"]),
+    ("wv_16_44.wv", ["-ar", "44100", "-sample_fmt", "s16p", "-c:a", "wavpack"]),
+    ("wv_24_96.wv", ["-ar", "96000", "-sample_fmt", "s32p", "-bits_per_raw_sample", "24",
+                     "-c:a", "wavpack"]),
+]
 
 # (name, title, ffmpeg output arguments) of the stress set
 STRESS: list[tuple[str, str, list[str]]] = [
@@ -336,6 +372,24 @@ def load(out: Path) -> list[Entry]:
         raise MediaError(f"no {f}: make the set with `arb media {out}` and copy it to the "
                          "card") from None
     return [Entry(**e) for e in data["files"]]
+
+
+def codectest(out: Path, tone: Path, *,
+              echo: Callable[[str], object] = print) -> list[Path]:
+    """Writes the torture's codec set from TONE: OUT/codectest/, a
+    CODECTEST_S clip per CODECTEST case; returns the clips"""
+    if not tone.is_file():
+        raise FileNotFoundError(f"no tone {tone}")
+    folder = out / CODECTEST_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    clips = []
+    for name, args in CODECTEST:
+        clip = folder / name
+        _encode(["-i", str(tone)],
+                ["-t", str(CODECTEST_S), "-map", "0:a", "-map_metadata", "-1", *args], clip)
+        clips.append(clip)
+        echo(f"{clip.stat().st_size // 1024:6d} KB  {name}")
+    return clips
 
 
 def stress(out: Path, source: Path, *, start: float = 0.0,

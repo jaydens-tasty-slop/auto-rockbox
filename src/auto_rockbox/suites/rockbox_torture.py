@@ -78,7 +78,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
-from .. import card, fb, linein
+from .. import card, fb, linein, media
 from ..bt import bluez
 from ..btpeer import analysis, have_bumble, pcsink
 from ..btpeer.options import HeadsetOptions, HidOptions
@@ -106,12 +106,12 @@ CFGS = {
                      "selector type: bar (gradient)\nstatusbar: top\nui viewport: -\n",
 }
 THEMES = ("/.rockbox/themes/cabbiev2.cfg", "/.rockbox/themes/rockbox_failsafe.cfg")
-CODECTEST = "/codectest"
+CODECTEST = f"/{media.CODECTEST_DIR}"            # `arb media-codectest`
 CODEC_EXT = re.compile(r"\.(mp3|flac|m4a|tta|aiff|au|wav|wv|ac3|spx|ape|ogg|opus)$")
 PROBE = f"{CODECTEST}/flac_16_44.flac"          # an SD codec: are the modules this build's?
 UNSUPPORTED = f"{CODECTEST}/wma_320.wma"        # WMA: no codec on master
-STRESS = "/stress"
-STRESS_PLAYLIST = "/Playlists/Stress test.m3u8"
+STRESS = "/stress"                              # `arb media-stress`
+STRESS_PLAYLIST = f"/{media.STRESS_PLAYLIST}"
 ROCKS = "/.rockbox/rocks"
 PLUGIN_DIRS = ("games", "apps", "demos")
 PLUGIN_SKIP = ("battery_bench.rock", "lastfm_scrobbler.rock")

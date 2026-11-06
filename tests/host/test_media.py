@@ -19,9 +19,10 @@ from unittest.mock import patch
 
 import numpy as np
 
-import auto_rockbox.commands.media  # noqa: F401  (registers `arb media-stress`)
+import auto_rockbox.commands.media  # noqa: F401  (registers `arb media-*`)
 from auto_rockbox import cli, linein, media
 from auto_rockbox.registry import Context
+from auto_rockbox.suites import rockbox_torture as rt
 from auto_rockbox.workspace import Workspace
 
 RATE = media.RATE
@@ -174,6 +175,18 @@ class TestStress(unittest.TestCase):
             assert f"no stress source {Path(d, 'song.flac')}" in err.getvalue(), err.getvalue()
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "no ffmpeg")
+    def test_codectest(self) -> None:
+        with tempfile.TemporaryDirectory() as d, patch.object(media, "CODECTEST_S", 1):
+            root = Path(d)
+            clips = media.codectest(root / "out", write_wav(root / "tone.wav", tone(1000, 1500, 3)),
+                                    echo=lambda _: None)
+            assert [c.name for c in clips] == [n for n, _ in media.CODECTEST]
+            assert all(c.parent == root / "out" / media.CODECTEST_DIR for c in clips)
+            assert media.duration(root / "out/codectest/wav_24_96.wav") == 1.0
+        # the files the torture names are in the set
+        names = {f"/{media.CODECTEST_DIR}/{n}" for n, _ in media.CODECTEST}
+        assert {rt.PROBE, rt.UNSUPPORTED} <= names
+
     def test_stress(self) -> None:
         with tempfile.TemporaryDirectory() as d, patch.object(media, "STRESS_S", 1):
             root = Path(d)

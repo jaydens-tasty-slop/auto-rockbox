@@ -26,6 +26,12 @@ arb yp3 torture build/yp3/rockbox.elf build/torture-RUN --until 07:00 --seed 3
 - Build the image into its **own directory** and leave it alone during the
   run. Recovery reflashes that file, so rebuilding over it changes what the
   run tests.
+- **Card media comes from arb.** Torture plays `/codectest` (one clip per
+  codec, from `arb media-codectest OUT`) and the stress set
+  (`arb media-stress OUT --source OUT/codectest/flac_16_44.flac`: `/stress`
+  plus its playlist). Copy OUT's contents to the card root once, for
+  example with `card-run 'cp -r OUT/. "$MP/"'`. Library scenarios skip
+  when the card has no music library.
 - Start `arb linein serve` (and `arb webcam serve` for `--shots`) first.
   Keep Line In at unity gain, and check what is on the card before blaming
   the player (some test files step down 12 dB at 10 s by design).
