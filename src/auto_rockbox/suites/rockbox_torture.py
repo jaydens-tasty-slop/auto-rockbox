@@ -118,7 +118,9 @@ STRESS = "/stress"                              # `arb media-stress`
 STRESS_PLAYLIST = f"/{media.STRESS_PLAYLIST}"
 ROCKS = "/.rockbox/rocks"
 PLUGIN_DIRS = ("games", "apps", "demos")
-PLUGIN_SKIP = ("battery_bench.rock", "lastfm_scrobbler.rock")
+# xrick: without Rick Dangerous's data files (nobody ships them) it only
+# splashes an error and returns OK, which KNOWN_PLUGIN_ERRORS cannot match
+PLUGIN_SKIP = ("battery_bench.rock", "lastfm_scrobbler.rock", "xrick.rock")
 VIDEO_DIR = "/video"
 VIDEO_PLAYER = f"{ROCKS}/viewers/videoplayer.rock"
 VIDEO_EXT = (".avi", ".mkv", ".mp4", ".mov")
