@@ -1040,8 +1040,12 @@ class RockboxTorture(TortureSuite):
         return True
 
     def close_plugin(self) -> bool:
-        """Out of any running plugin; False if no exit worked"""
-        for script in PLUGIN_EXITS:
+        """Out of any running plugin; False if no exit worked. The exits
+        twice: one can move the plugin to a screen an earlier one leaves
+        (random keys left an Arduboy game in its Settings, where the pause
+        exits only picked options; a later exit's Select resumed the game,
+        which the pause exit then left: TS17 sweep, amazeab, ardubloxx)"""
+        for script in PLUGIN_EXITS * 2:
             if not self.plugin_keys(script.split()):
                 return True
         return not self.in_plugin()

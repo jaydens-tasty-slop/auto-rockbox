@@ -482,6 +482,24 @@ def test_close_plugin_stops_mid_chord() -> None:
         assert keys == [f"keys {k}" for k in (first + rt.PLUGIN_EXITS[1].split())[:quits_after]]
 
 
+def test_close_plugin_tries_the_exits_twice() -> None:
+    """A plugin that one exit moves to a screen an earlier exit leaves: the
+    second pass gets it out; one that no exit leaves gets every exit twice"""
+    exits = [k for script in rt.PLUGIN_EXITS for k in script.split()]
+    with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (p, s, _):
+        sent = len(p.dev.sent)
+        quits_after = len(exits) + 3
+        with mock.patch.object(s, "in_plugin", side_effect=[True] * quits_after + [False]):
+            assert s.close_plugin()
+        keys = [x for x in p.dev.sent[sent:] if x.startswith("keys")]
+        assert keys == [f"keys {k}" for k in (exits * 2)[:quits_after]]
+        sent = len(p.dev.sent)
+        with mock.patch.object(s, "in_plugin", return_value=True):
+            assert not s.close_plugin()
+        keys = [x for x in p.dev.sent[sent:] if x.startswith("keys")]
+        assert keys == [f"keys {k}" for k in exits * 2]
+
+
 def test_library_track_backs_out_of_dead_ends() -> None:
     """A stock card's folders hold no music: the walk backs out of them and
     finds the album; no library at all: None, within LIBRARY_LS listings"""
