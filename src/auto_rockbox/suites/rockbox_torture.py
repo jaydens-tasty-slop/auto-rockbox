@@ -192,12 +192,12 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # Select menu that opens on its second item with Quit two below (MazezaM's,
 # on Retry level); last, the Select+Left chord three times (Rockpaint's quit
 # on YP3_PAD and the only way out of its dialogs; a half-drawn shape takes
-# one press more); five Backs (PictureFlow: a screen from its menu, the
-# track list, the cover's animation, then out); then the player's back
-# chord, Up+Left, twice (RockTrack: its editors to its start menu, then out)
+# one press more); the YP3 pad's menu chord, Up+Left, then Quit, the last
+# item (PictureFlow, where Left scrolls the covers and is never Back); then
+# Up+Left twice (RockTrack: its editors to its start menu, then out)
 PLUGIN_EXITS = ["SU* 800 U S", "U S", "4000 SU* 800 U S", "U S", "U S L S+ U S L L",
                 "L+ S+", "U+ S", "D S U S", "L+ 300 L 300 U S", "S+ 300 D 300 D 300 S",
-                "SL 300 SL 300 SL", "L 300 L 300 L 300 L 300 L", "UL 300 UL"]
+                "SL 300 SL 300 SL", "UL 500 U S", "UL 300 UL"]
 # Before Home: Back presses, then plugin exits, for screens that ignore Home
 HOME_FIRST_KEYS = ["", "L 300 L 300 L 300 ", "SU* 800 U S ", "U S L S+ U S L L ", "L+ S+ ",
                    "U+ S "]
