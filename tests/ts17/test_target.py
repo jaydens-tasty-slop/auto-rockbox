@@ -7,9 +7,10 @@ import struct
 from pathlib import Path
 from unittest import mock
 
-from auto_rockbox import fb, registry
+from auto_rockbox import fb, registry, shot
 from auto_rockbox.elf import Elf, Symbolizer
 from auto_rockbox.keys import KeyScriptError
+from auto_rockbox.shell import Reply
 from auto_rockbox.targets.ts17 import FB_SYMBOL, Ts17, adfu, devblock
 from auto_rockbox.workspace import Workspace
 
@@ -62,6 +63,23 @@ def test_framebuffer_decode() -> None:
     assert im.getpixel((0, 7)) == (0, 0, 255)
     assert im.getpixel((127, 159)) == (0, 255, 0)
     assert im.getpixel((1, 1)) == (0, 0, 0)
+
+
+def test_shot_reads_values_not_memory_bytes() -> None:
+    """The shell prints each pixel's value high digit first: Bubbles' grey
+    0x52ce stays grey on the TS17, whose memory keeps it little-endian"""
+    w = Ts17.lcd.width
+
+    def send(line: str) -> Reply:
+        ys = range(Ts17.lcd.height) if line == "shot" else []
+        return Reply(True, [f"fb {y} {'52ce' + 'f800' * (w - 1)}" for y in ys] + ["ok"])
+
+    im, missing = shot.screenshot(send, Ts17.lcd)
+    assert not missing
+    v = 0x52ce
+    assert im.getpixel((0, 0)) == ((v >> 11) * 255 // 31, (v >> 5 & 63) * 255 // 63,
+                                   (v & 31) * 255 // 31)
+    assert im.getpixel((1, 0)) == (255, 0, 0)
 
 
 def test_framebuffer_symbol_in_build() -> None:

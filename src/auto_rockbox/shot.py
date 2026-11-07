@@ -1,6 +1,8 @@
 """A screenshot of the running player through its dev shell (apps/dev_shell.c):
-`shot` prints the framebuffer as rows `fb Y HEX` (the row's bytes as they are
-in memory), and `shot Y0 Y1` prints rows Y0..Y1 again. The serial link loses
+`shot` prints the framebuffer as rows `fb Y HEX` (each pixel's RGB565 value,
+high digit first, whatever byte order the LCD keeps in memory: the TS17's
+shots read as byte-swapped while they were taken for memory bytes), and
+`shot Y0 Y1` prints rows Y0..Y1 again. The serial link loses
 a chunk now and then when this PC is slow to read, so missing rows are
 fetched again.
 
@@ -70,4 +72,4 @@ def screenshot(send: Send, lcd: Lcd, rounds: int = 3) -> tuple[Image, list[int]]
             parse_rows(send(f"shot {a} {b}").lines, rows)
     missing = [y for y in range(lcd.height) if row(y) is None]
     raw = b"".join(row(y) or bytes(width) for y in range(lcd.height))
-    return fb.decode(raw, lcd), missing
+    return fb.decode(raw, lcd, big_endian=True), missing
