@@ -199,9 +199,7 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # held, it would spill into the menu), then Quit; Quit, last, in a menu that
 # keeps its last pick and ignores Back (Bubbles: Up wraps to the end only
 # from the top; a held key stops at the end, its repeats never wrap), from
-# up to two levels down (Codebuster: an option under its Settings), with Up
-# between the Backs (Bubbles' game: Up pauses and resumes, so Back reaches
-# the menu from a running game and a paused one, TS17 sweep step 314); a long
+# up to two levels down (Codebuster: an option under its Settings); a long
 # Select menu that opens on its second item with Quit two below (MazezaM's,
 # on Retry level); two long Selects, then Quit, the last item (Xobox on
 # YP3_PAD: a Select release toggles its pause and long Select opens its
@@ -213,7 +211,7 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # never Back); then Up+Left twice (RockTrack: its editors to its start menu,
 # then out)
 PLUGIN_EXITS = ["SU* 800 U S", "U S", "4000 SU* 800 U S", "U S", "U S L S+ U S L L",
-                "L+ S+", "U+ S", "SD 800 U S", "D S U S", "L 300 U 300 L 300 D+ S",
+                "L+ S+", "U+ S", "SD 800 U S", "D S U S", "L 300 L 300 D+ S",
                 "L+ 300 L 300 U S",
                 "S+ 300 D 300 D 300 S", "S+ 300 S+ 300 U S",
                 "SL 300 SL 300 SL", "UL 500 U S", "UL 300 UL"]
