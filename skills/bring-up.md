@@ -30,6 +30,25 @@ conclusions.**
   writer refuse them (the YP3 writer refuses below `0xE000` and from
   `0x1FC000` up, and the TS17 writer refuses the boot sectors without
   `--boot`).
+- **Always keep a way back from your own firmware, by hand and without a
+  host.** Once the port replaces stock, stock's ways into recovery mode go
+  with it: the TS17's on/off + USB rule lived in stock's application, and
+  its pinhole turned out to be a full reset that wipes the boot-mode word,
+  so it booted Rockbox again. Then a port image that hangs before its dev
+  return (or a release image, which has none) bricks the player as far as
+  the user can tell. Before the first image that boots on its own, give
+  every build, release included:
+  - **a key rule at power-on**, checked as the very first thing the firmware
+    does (before the LCD, storage or threads): a key held with USB power in,
+    still held a moment later, sets the recovery word and resets. Keep its
+    total hold clear of the PMU's own long-press reset (the TS17's is ~7 s;
+    its rule takes ~3.5 s). Test it on hardware, and test that a normal
+    power-on press still boots;
+  - **a menu entry** (System > Debug) that reboots into recovery mode
+    through a clean shutdown.
+  Verify every claimed way in on hardware, from the port's own firmware,
+  not from stock: what reached recovery with stock flashed may not with the
+  port flashed.
 - **Know your charger.** Boot ROM USB modes often leave the charger on with
   nobody supervising it. A player left in that mode for hours goes far past
   a normal full charge. Find the charge enable bit early, and make the host
@@ -74,6 +93,10 @@ it (measured, read from stock at an address, or guessed).
    reason before running anything risky, so a hang comes back to the host by
    itself. Make it one compile switch (`*_RECOVERY_WATCHDOG`), on during
    bring-up.
+7. **A hand path into recovery mode from your own firmware** (Ground rules:
+   a key rule at power-on, a menu entry), in place before an image boots on
+   its own from flash. Note which resets keep the recovery word (watchdog
+   and core resets usually do; a pinhole or PMU reset may not).
 
 ## Phase 2: the dev loop
 
@@ -87,7 +110,9 @@ the contract and [dev-loop.md](dev-loop.md) for using it. Its parts:
 - a **log ring** in RAM that survives the return (watchdog resets keep RAM;
   some PMU resets do not);
 - a **timed return** to recovery mode, plus a default for images that boot
-  without host config;
+  without host config. Off the cable that default reads as a crash every
+  N seconds (the TS17's 90 s did, mid-test, in front of the user): launch
+  "never return" before handing a dev build to someone;
 - a **key script** injected at the button driver, so menus can be driven
   without hands;
 - the **framebuffer** read back after the return, and a **webcam** on the

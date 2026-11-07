@@ -69,6 +69,10 @@ Each Rockbox run must show all of these:
 
 ### Recovery and install
 
+- [ ] **Recovery mode by hand from the release build**, both ways
+      (bring-up.md, Ground rules): the power-on key rule with USB in, and the
+      debug menu's reboot into recovery mode. A normal power-on press still
+      boots, and the rule's hold ends well before the PMU's long-press reset.
 - [ ] **The way back to stock works from the release build**: follow the
       published recovery steps literally on a player running the candidate.
       Stock must boot, play and keep its settings or calibration.
