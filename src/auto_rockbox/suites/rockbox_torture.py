@@ -1681,8 +1681,11 @@ def video(t: RockboxTorture) -> str | None:
         if t.in_plugin():
             t.keys(f"S+ 300 {up} 300 S")
             time.sleep(1)
+    # the screen those left, before the other exits' keys change it
+    # (torture 18 step 39: was the menu open?)
+    shot = t.screen("video") if t.in_plugin() else ""
     if not t.close_plugin():
-        t.fail("did not exit")
+        t.fail(f"did not exit ({shot})")
         t.boot()
         return v
     t.check_health(h)
