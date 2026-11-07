@@ -694,6 +694,7 @@ class RockboxTorture(TortureSuite):
         self.linein_db: list[float] = []
         self.battery: list[tuple[float, int, int, bool]] = []
         self.tree: list[MenuNode] | None = None
+        self.sweep: list[str] | None = None     # pluginsweep's plugins still to run
         self.cfg_saved = False
         self.coverage = Coverage(coverage_file(target))
         conf, bt = target.conf, target.ws.section("bluetooth")
@@ -1873,7 +1874,35 @@ def plugins(t: RockboxTorture) -> str | None:
         if not rocks:
             return f"skipped: no plugins in {ROCKS}/{cat}"
         pick = t.rng.choice(rocks)
-    p = f"{cat}/{pick}"
+    return try_plugin(t, f"{cat}/{pick}")
+
+
+@rockbox_scenario("pluginsweep", weight=0)
+def pluginsweep(t: RockboxTorture) -> str | None:
+    """Every plugin once, in order, one a step, then random ones as in
+    `plugins` (off by default: --only pluginsweep): a plugin that hangs or
+    crashes the player is that step's failure, its `run` in the crash
+    file's commands"""
+    if t.sweep is None:
+        t.sweep = []
+        for cat in PLUGIN_DIRS:
+            for e in plugin_choices(t, cat):
+                if not e.endswith("/"):
+                    t.sweep.append(f"{cat}/{e}")
+                    continue
+                sub = f"{cat}/{e.rstrip('/')}"
+                t.sweep += [f"{sub}/{r}" for r in plugin_choices(t, sub) if not r.endswith("/")]
+        t.sweep.sort()
+        t.note(f"{len(t.sweep)} plugins to sweep")
+    if not t.sweep:
+        return plugins(t)
+    t.music()
+    return try_plugin(t, t.sweep.pop(0))
+
+
+def try_plugin(t: RockboxTorture, p: str) -> str:
+    """P (under ROCKS) run, random keys (Select starts a game from its start
+    menu), then out with the player's keys"""
     t.sh(f"run {ROCKS}/{p}")
     time.sleep(3)
     t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200"], k=20))

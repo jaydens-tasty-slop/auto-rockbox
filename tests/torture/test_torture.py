@@ -44,7 +44,7 @@ PORT = Path(__file__).resolve().parents[3]          # rockbox-yp3, if auto-rockb
 LEDGER = PORT / "docs/torture-runs.csv"
 
 # Every player's scenarios, and those that need a feature of the player's build
-SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "fs": 4, "db": 4, "usb": 2,
+SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "pluginsweep": 0, "fs": 4, "db": 4, "usb": 2,
                   "monkey": 8, "menus": 6, "dbdeep": 4, "crawl": 16, "recui": 4, "fmui": 4,
                   "longplay": 4, "record": 8, "sdodd": 4, "meta": 4, "theme": 4, "codecmix": 8,
                   "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "video": 4, "missing": 2}
