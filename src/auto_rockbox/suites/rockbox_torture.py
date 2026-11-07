@@ -188,7 +188,9 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # Out of a plugin: ported games' pause gesture (Select+Up held) then Quit, the
 # last item (Up wraps to it), again for a start menu, once more after a banner
 # (games clear the key queue between levels); menus, long Select, Left; out of
-# a keyboard (long Left) and Text Editor's unsaved-changes menu; a long
+# a keyboard (long Left) and Text Editor's unsaved-changes menu; Quit, last,
+# in a menu that keeps its last pick (Bubbles: Up wraps to the end only from
+# the top; a held key stops at the end, its repeats never wrap); a long
 # Select menu that opens on its second item with Quit two below (MazezaM's,
 # on Retry level); last, the Select+Left chord three times (Rockpaint's quit
 # on YP3_PAD and the only way out of its dialogs; a half-drawn shape takes
@@ -196,7 +198,8 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # item (PictureFlow, where Left scrolls the covers and is never Back); then
 # Up+Left twice (RockTrack: its editors to its start menu, then out)
 PLUGIN_EXITS = ["SU* 800 U S", "U S", "4000 SU* 800 U S", "U S", "U S L S+ U S L L",
-                "L+ S+", "U+ S", "D S U S", "L+ 300 L 300 U S", "S+ 300 D 300 D 300 S",
+                "L+ S+", "U+ S", "D S U S", "D+ S", "L+ 300 L 300 U S",
+                "S+ 300 D 300 D 300 S",
                 "SL 300 SL 300 SL", "UL 500 U S", "UL 300 UL"]
 # Before Home: Back presses, then plugin exits, for screens that ignore Home
 HOME_FIRST_KEYS = ["", "L 300 L 300 L 300 ", "SU* 800 U S ", "U S L S+ U S L L ", "L+ S+ ",
