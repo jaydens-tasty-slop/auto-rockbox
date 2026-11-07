@@ -1,7 +1,7 @@
 """The YP3's own commands: flashing and inspection in ROM USB, the decoders of
-what a run leaves in retained SRAM, the dev shell's screenshot, the stock
-firmware, the charge log and the profiler. `run` replaces the generic one to
-add files for the card and extra flash content.
+what a run leaves in retained SRAM, the stock firmware, the charge log and
+the profiler. `run` replaces the generic one to add files for the card and
+extra flash content.
 """
 
 from __future__ import annotations
@@ -11,12 +11,10 @@ import time
 from argparse import Namespace
 from pathlib import Path
 
-from ... import fb
 from ...elf import Elf
 from ...registry import Context, arg, command
 from ...run import parse_settings, report, run
 from ...shell import NoShell
-from ...shot import screenshot
 from . import Yp3, Yp3Run, prof
 from .image import ImageError, parse_blob, parse_push
 from .power import ChargeLog
@@ -249,22 +247,6 @@ def sym(ctx: Context, args: Namespace) -> int:
     t = _yp3(ctx)
     print(trace_names([int(w, 16) for w in args.words], t.function_names(args.elf)))
     return 0
-
-
-@command("shot", help="screenshot of the running player through the dev shell",
-         target=YP3, needs={"shell"},
-         args=[arg("out", type=Path, nargs="?", help="PNG, 3x (default: <build>/shot.png)")])
-def shot(ctx: Context, args: Namespace) -> int:
-    """Needs a run with --usb. A sleeping LCD shows its last frame: send a key
-    first. Exit status 1 if rows are still missing after refetching them."""
-    t = _yp3(ctx)
-    out = args.out or t.ws.build_dir / "shot.png"
-    sh = t.shell()
-    im, missing = screenshot(lambda line: sh(line, timeout=60), t.lcd)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fb.scaled(im).save(out)
-    print(f"{out}: {im.width}x{im.height}" + (f", missing rows {missing}" if missing else ""))
-    return 1 if missing else 0
 
 
 @command("stock", help="flash this player's stock firmware back and boot it", target=YP3)

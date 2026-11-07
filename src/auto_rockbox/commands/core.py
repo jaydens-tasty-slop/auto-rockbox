@@ -10,6 +10,7 @@ from .. import fb, registry
 from ..errors import UsageError
 from ..registry import Context, arg, command
 from ..run import parse_settings, report, run
+from ..shot import screenshot
 from ..target import RunRequest
 
 
@@ -83,6 +84,21 @@ def sh(ctx: Context, args: Namespace) -> int:
     if reply.timed_out:
         print("timeout", file=sys.stderr)
     return 0 if reply.ok else 1
+
+
+@command("shot", help="screenshot of the running player through the dev shell",
+         needs={"shell"},
+         args=[arg("out", type=Path, nargs="?", help="PNG, 3x (default: <build>/shot.png)")])
+def shot(ctx: Context, args: Namespace) -> int:
+    """Needs a run with --usb. A sleeping LCD shows its last frame: send a key
+    first. Exit status 1 if rows are still missing after refetching them."""
+    out = args.out or ctx.t.ws.build_dir / "shot.png"
+    sh = ctx.t.shell()
+    im, missing = screenshot(lambda line: sh(line, timeout=60), ctx.t.lcd)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fb.scaled(im).save(out)
+    print(f"{out}: {im.width}x{im.height}" + (f", missing rows {missing}" if missing else ""))
+    return 1 if missing else 0
 
 
 @command("battery", help="the cell's voltage and the charger", needs={"battery"})
