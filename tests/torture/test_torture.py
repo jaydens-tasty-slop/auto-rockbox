@@ -44,8 +44,9 @@ PORT = Path(__file__).resolve().parents[3]          # rockbox-yp3, if auto-rockb
 LEDGER = PORT / "docs/torture-runs.csv"
 
 # Every player's scenarios, and those that need a feature of the player's build
-SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "pluginsweep": 0, "fs": 4, "db": 4, "usb": 2,
-                  "monkey": 8, "menus": 6, "dbdeep": 4, "crawl": 16, "recui": 4, "fmui": 4,
+SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "fs": 4, "db": 4, "usb": 2,
+                  "pluginsweep": 0, "monkey": 8, "menus": 6, "dbdeep": 4, "crawl": 16, "recui": 4,
+                  "fmui": 4,
                   "longplay": 4, "record": 8, "sdodd": 4, "meta": 4, "theme": 4, "codecmix": 8,
                   "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "video": 4, "missing": 2}
 FEATURE_WEIGHTS = {"sleep": 4}
@@ -332,6 +333,17 @@ def test_weight_zero() -> None:
                               echo=lines.append)
     assert [x.name for x in steps] == ["sim-ok"] * 8
     assert lines[0].endswith(", scenarios sim-ok")
+
+
+def test_only_runs_one_off_by_default() -> None:
+    """--only naming a scenario of weight 0 runs it; --weights 0 still
+    leaves it out"""
+    with tempfile.TemporaryDirectory() as tmp:
+        _, _, steps = sim_run(Path(tmp), ["sim-off"], 4)
+    assert [x.name for x in steps] == ["sim-off"] * 4
+    with tempfile.TemporaryDirectory() as tmp:
+        _, _, steps = sim_run(Path(tmp), ["sim-ok", "sim-off"], 4, weights={"sim-off": 0})
+    assert [x.name for x in steps] == ["sim-ok"] * 4
 
 
 def test_simulated_leak() -> None:

@@ -176,6 +176,7 @@ for _name, _command in (("sim-ok", "work"), ("sim-glitch", "glitch"), ("sim-leak
                         ("sim-poweroff", "poweroff")):
     gen.scenario(_name, target={"sim"})(sim_step(_command))
 gen.scenario("sim-fail", target={"sim"})(sim_step("work", "a problem of its own"))
+gen.scenario("sim-off", weight=0, target={"sim"})(sim_step("work"))
 
 
 def sim_run(root: Path, only: list[str], steps: int, seed: int = 3, *,

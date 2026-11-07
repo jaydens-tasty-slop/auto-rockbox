@@ -165,7 +165,13 @@ def run(suite: Suite, s: RunSettings, echo: Callable[[str], None] = print) -> li
     if unknown:
         raise SystemExit(f"no such {suite.name} scenario for {suite.target.name}: "
                          f"{', '.join(unknown)} (have {', '.join(table)})")
-    pool = [n for n in names for _ in range(s.weights.get(n, table[n].weight))]
+    def weight(n: str) -> int:
+        # one named in --only runs even if off by default (weight 0), unless
+        # --weights says 0
+        w = s.weights.get(n, table[n].weight)
+        return 1 if w == 0 and s.only and n not in s.weights else w
+
+    pool = [n for n in names for _ in range(weight(n))]
     if not pool:
         raise SystemExit("every scenario has weight 0")
     rng = random.Random(s.seed)

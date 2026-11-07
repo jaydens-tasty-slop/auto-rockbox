@@ -675,7 +675,7 @@ def scenario(name: str, *, weight: int = 1, target: Iterable[str] | None = None,
              arg("out", type=Path, help="run directory: steps.jsonl, NNN-name.txt, crash-N.txt, "
                  "report.md"),
              arg("--hours", type=float), arg("--until", metavar="HH:MM"),
-             arg("--only", help="comma-separated scenarios"),
+             arg("--only", help="comma-separated scenarios (one off by default runs too)"),
              arg("--weights", default="", help="name=weight,... overriding the defaults "
                  "(0 leaves one out, a positive weight takes in one that is off by default)"),
              arg("--seed", type=int),
