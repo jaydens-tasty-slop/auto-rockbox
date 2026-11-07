@@ -500,6 +500,24 @@ def test_close_plugin_tries_the_exits_twice() -> None:
         assert keys == [f"keys {k}" for k in exits * 2]
 
 
+def test_a_known_exit_refusal_is_not_a_failure() -> None:
+    """Sudoku with a conflict on its board keeps every exit and says so: a
+    note and a reboot; without the splash, or another plugin, a failure"""
+    cases = [("games/sudoku.rock", [("splash", "Illegal move!")], False),
+             ("games/sudoku.rock", [], True),
+             ("games/bubbles.rock", [("splash", "Illegal move!")], True)]
+    for plugin, msgs, fails in cases:
+        with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (_, s, _), \
+                mock.patch.object(rt.time, "sleep"), mock.patch.object(s, "plugin_keys"), \
+                mock.patch.object(s, "close_plugin", return_value=False), \
+                mock.patch.object(s, "msgs", return_value=msgs), \
+                mock.patch.object(s, "screen", return_value="shot.png"), \
+                mock.patch.object(s, "boot") as boot, mock.patch.object(s, "fail") as fail:
+            assert rt.try_plugin(s, plugin) == plugin
+            assert fail.called == fails and boot.called
+            assert fails or "refused to quit" in s.notes[-1]
+
+
 def test_library_track_backs_out_of_dead_ends() -> None:
     """A stock card's folders hold no music: the walk backs out of them and
     finds the album; no library at all: None, within LIBRARY_LS listings"""

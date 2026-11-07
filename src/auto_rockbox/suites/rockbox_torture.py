@@ -173,6 +173,12 @@ KNOWN_PLUGIN_ERRORS: dict[str, str | None] = {
     "imageviewer.rock": r"No supported files|No file|Unsupported file",
     "random_folder_advance_config.rock": r"folder_advance_list",
 }
+# Plugins that refuse every way out in a state random keys can leave them in
+# (upstream behaviour), and the splash that says so: Sudoku keeps a board
+# with a conflict, its quit and its menu both check (TS17 sweep, step 492)
+KNOWN_EXIT_REFUSALS: dict[str, str] = {
+    "sudoku.rock": r"^Illegal move!$",
+}
 CODEC_ERRORS = re.compile(r"codec load \d+ failed|ov_open failed|codec header error|"
                           r"no matching image|EOM|not enough memory")
 VIDEO_DROP_MAX = 0.05           # the Video Player's dropped share of due pictures
@@ -1917,13 +1923,18 @@ def pluginsweep(t: RockboxTorture) -> str | None:
 
 def try_plugin(t: RockboxTorture, p: str) -> str:
     """P (under ROCKS) run, random keys (Select starts a game from its start
-    menu), then out with the player's keys"""
+    menu), then out with the player's keys; a known refusal (its splash
+    seen) is a note and a reboot"""
     t.sh(f"run {ROCKS}/{p}")
     time.sleep(3)
     t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200"], k=20))
     if not t.close_plugin():
-        t.fail(f"did not exit (no way out with the player's keys: a keymap bug; "
-               f"{t.screen('plugin')})")
+        why = KNOWN_EXIT_REFUSALS.get(p.rsplit("/", 1)[-1])
+        if why and any(kind == "splash" and re.search(why, text) for kind, text in t.msgs()):
+            t.note(f"{p} refused to quit, as upstream does (splash {why}); rebooted")
+        else:
+            t.fail(f"did not exit (no way out with the player's keys: a keymap bug; "
+                   f"{t.screen('plugin')})")
         t.boot()
     return p
 
