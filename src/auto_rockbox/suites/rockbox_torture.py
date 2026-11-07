@@ -1847,18 +1847,34 @@ def monkey(t: RockboxTorture) -> str:
     return script
 
 
+def plugin_choices(t: RockboxTorture, cat: str) -> list[str]:
+    """A plugin folder's .rock files and its subfolders ("NAME/"), less
+    PLUGIN_SKIP and hidden folders (games/.picross/: a plugin's data)"""
+    return [e for e in ls_entries(t.sh(f"ls {ROCKS}/{cat}"))
+            if (e.endswith(".rock") and e not in PLUGIN_SKIP)
+            or (e.endswith("/") and not e.startswith("."))]
+
+
 @rockbox_scenario("plugins", weight=6)
 def plugins(t: RockboxTorture) -> str | None:
     """A random plugin over music, keys, then out with the player's keys (no
     health check: plugins take the CPU)"""
     t.music()
     cat = t.rng.choice(PLUGIN_DIRS)
-    rocks = [r for r in ls_entries(t.sh(f"ls {ROCKS}/{cat}"))
-             if r.endswith(".rock") and r not in PLUGIN_SKIP]
-    if not rocks:
+    choices = plugin_choices(t, cat)
+    if not choices:
         return f"skipped: no plugins in {ROCKS}/{cat}"
-    p = t.rng.choice(rocks)
-    t.sh(f"run {ROCKS}/{cat}/{p}")
+    pick = t.rng.choice(choices)
+    if pick.endswith("/"):
+        # a port's collection (games/arduboy/: a .rock per game) is one
+        # choice, then one of its games
+        cat += "/" + pick.rstrip("/")
+        rocks = [r for r in plugin_choices(t, cat) if not r.endswith("/")]
+        if not rocks:
+            return f"skipped: no plugins in {ROCKS}/{cat}"
+        pick = t.rng.choice(rocks)
+    p = f"{cat}/{pick}"
+    t.sh(f"run {ROCKS}/{p}")
     time.sleep(3)
     t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200"], k=20))
     if not t.close_plugin():
