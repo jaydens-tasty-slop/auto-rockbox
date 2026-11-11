@@ -127,8 +127,10 @@ STRESS_RATES = {48000: re.compile(r"_48k?\."), 44100: re.compile(r"_44[._]")}   
 ROCKS = "/.rockbox/rocks"
 PLUGIN_DIRS = ("games", "apps", "demos")
 # xrick: without Rick Dangerous's data files (nobody ships them) it only
-# splashes an error and returns OK, which KNOWN_PLUGIN_ERRORS cannot match
-PLUGIN_SKIP = ("battery_bench.rock", "lastfm_scrobbler.rock", "xrick.rock")
+# splashes an error and returns OK, which KNOWN_PLUGIN_ERRORS cannot match.
+# db_commit: random keys reach Auto commit (DB_NOCOMMIT: no commit again),
+# Restore and Destroy
+PLUGIN_SKIP = ("battery_bench.rock", "lastfm_scrobbler.rock", "xrick.rock", "db_commit.rock")
 VIDEO_DIR = "/video"
 VIDEO_PLAYER = f"{ROCKS}/viewers/videoplayer.rock"
 VIDEO_CFG = f"{ROCKS}/viewers/videoplayer.cfg"     # its settings, next to it
@@ -156,6 +158,7 @@ SEL_SETTLE_S = 0.4              # `sel` unchanged this long: the UI took its key
 SEL_READS = 10                  # and how many reads wait for that
 SEL_ITEM_MAX = 47               # `sel` item text kept (dev_shell.c drawn_list.item)
 DB_COMMIT_DELAYED = "Please reboot to enable"   # LANG_PLEASE_REBOOT, root_menu.c
+DB_NOCOMMIT = "database_commit.ignore"  # in /.rockbox: tagcache cancels every commit
 
 # A message (splash, prompt) that reports a failure ("No files" is an empty
 # list's notice, as an empty Shortcuts menu shows; "No file" is not)
@@ -2008,6 +2011,10 @@ def dbdeep(t: RockboxTorture) -> str | None:
         # heap): tagcache delays it to the next boot, upstream's design
         if ("splash", DB_COMMIT_DELAYED) in msgs:
             t.home()
+            if DB_NOCOMMIT in ls_entries(t.sh("ls /.rockbox")):
+                t.fail(f"/.rockbox/{DB_NOCOMMIT}: no database commit ever runs "
+                       "(db_commit.rock's Auto commit)")
+                return None
             return f"refused: the database commit waits for a reboot (free {h.num('free')})"
         t.menu_fail(f"main menu -> Database gave activity {act}, "
                     f"free {t.health().num('free')}")
