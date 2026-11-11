@@ -33,6 +33,7 @@ EARLY_COPY = 0xE430         # the bootloader copies [0xE430, 0xF430) to SRAM 0x8
 EARLY_MAX = 0x1000
 EARLY_END = "__yp3_early_code_end"  # .text up to this symbol is the early code
 LOADED = (".text", ".vectors", ".data")
+OPTIONAL = (".text_rest",)  # code beside the functions app.lds puts in SRAM
 DEV_MARK = "yp3_dev_return_seconds"     # only YP3_DEV builds return to ROM USB by themselves
 
 XIP_CODEC_AREA = 0x0E0000   # XIP_CODEC_AREA_START (yp3.h) - XIP_ALIAS
@@ -60,7 +61,7 @@ def place_elf(elf: Elf, base: bytes) -> tuple[bytearray, int]:
     if missing:
         raise ImageError(f"{elf.path}: no section {', '.join(missing)}")
     end = 0
-    for name in LOADED:
+    for name in LOADED + tuple(n for n in OPTIONAL if n in elf.sections):
         sec = elf.sections[name]
         start = _load_address(elf, sec.addr) - XIP_ALIAS
         if start < CODE_MIN or start + sec.size > FIRM_END:
