@@ -1486,8 +1486,12 @@ class RockboxTorture(TortureSuite):
             time.sleep(secs)
             h1 = self.health()
             (e0, n0), (e1, n1) = h0.pair("elapsed"), h1.pair("elapsed")
-            rate, audio = (e1 - e0) / 1000 / (time.monotonic() - t0), h1.num("audio")
-            if n0 == n1 and e1 >= e0:
+            same = n0 == n1 and e1 >= e0
+            # Across a change, the last track's rest and the new one's start:
+            # stress tracks of 10-20 s changed in both (torture 30 step 138)
+            moved = e1 - e0 if same else n0 - e0 + e1
+            rate, audio = moved / 1000 / (time.monotonic() - t0), h1.num("audio")
+            if same:
                 break
         if rate < 0.8:
             self.fail(f"{what}: elapsed moved at {rate:.2f}x real time (audio {audio})")
