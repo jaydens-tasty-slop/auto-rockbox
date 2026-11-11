@@ -218,12 +218,16 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # then out); last, Left, Up and Select, then Up held (LRC Player: long Select
 # opens its Timetag Editor, which only Left leaves, through "Save Changes?"
 # when a tag moved, where Up wraps to Discard; its lyrics screen quits only
-# on Up held, Now Playing's Stop; TS17 sweep 28 step 15)
+# on Up held, Now Playing's Stop; TS17 sweep 28 step 15); Select+Down, then
+# the pause gesture and Quit (Terrario: a Down tap in play opens its
+# inventory, which only Select+Down leaves, and the chords before reopen
+# it; TS17 sweep 28 step 475)
 PLUGIN_EXITS = ["SU* 800 U S", "U S", "4000 SU* 800 U S", "U S", "U S L S+ U S L L",
                 "L+ S+", "U+ S", "SD 800 U S", "D S U S", "L 300 L 300 D+ S",
                 "L+ 300 L 300 U S",
                 "S+ 300 D 300 D 300 S", "S+ 300 S+ 300 U S",
-                "SL 300 SL 300 SL", "UL 500 U S", "UL 300 UL", "L 300 U S 300 U+"]
+                "SL 300 SL 300 SL", "UL 500 U S", "UL 300 UL", "L 300 U S 300 U+",
+                "SD 800 SU* 800 U S"]
 # Before Home: Back presses, then plugin exits, for screens that ignore Home
 HOME_FIRST_KEYS = ["", "L 300 L 300 L 300 ", "SU* 800 U S ", "U S L S+ U S L L ", "L+ S+ ",
                    "U+ S "]
