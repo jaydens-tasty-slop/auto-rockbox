@@ -107,11 +107,14 @@ CFGS = {
                   "lcd sleep after backlight off: 5\n",
     # English by name: the built-in one is "lang: " (no file), and a .cfg
     # with that keeps whatever language a crawl selected, so t_base.cfg's
-    # restore left the menus in Chinese (TS17 torture 10)
+    # restore left the menus in Chinese (TS17 torture 10). The main menu in
+    # its default order (MAIN_MENU, menu() walks by index): random keys in
+    # Settings > Main Menu reorder or hide items, and the card keeps that
+    # (TS17 torture 29: Database went to Settings)
     "t_default.cfg": "wps: -\nsbs: -\nfms: -\niconset: -\nviewers iconset: -\n"
                      "backdrop: -\nforeground color: FFFFFF\nbackground color: 000000\n"
                      "selector type: bar (gradient)\nstatusbar: top\nui viewport: -\n"
-                     "lang: /.rockbox/langs/english.lng\n",
+                     "lang: /.rockbox/langs/english.lng\nroot menu order: -\n",
 }
 THEMES = ("/.rockbox/themes/cabbiev2.cfg", "/.rockbox/themes/rockbox_failsafe.cfg")
 CODECTEST = f"/{media.CODECTEST_DIR}"            # `arb media-codectest`
