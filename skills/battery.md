@@ -18,6 +18,26 @@ only if its results disagree with expectations: two runs of the same setup
 differ by a few percent anyway. For a release, use the matrix as written in
 [release.md](release.md).
 
+## The person at the player
+
+Some of the setup is physical, and the agent cannot do it or see it (the
+webcam may not show the player). Before the first run, ask the user to set
+up, and to confirm, each of these. Do not start a run on an assumption:
+
+- **Splitter and headphones**: the player's jack into a splitter, with the
+  headphones on one side and the cable to the PC's Line In on the other. A
+  dev rig often has the jack straight into Line In (no load), so check this
+  before every A run, not only the first.
+- **USB out**: unplugged at the start of the run and left out until it
+  ends. Tools can stop the charger, but only a person can take VBUS away.
+- **Power off, rest, power on**: after the charge, at the player.
+- **Stock's own settings and Play**: stock has no dev shell, so its volume
+  step, repeat mode, backlight, Bluetooth and the start are pressed by hand.
+  Give the user the exact steps, and read the level on Line In while they
+  try volume steps.
+- **The room and the PC's place**: temperature, no sun or heater; in
+  Bluetooth runs the PC 1 m away.
+
 ## Fixed conditions
 
 Write these down in the port's results file before the first run, and keep
