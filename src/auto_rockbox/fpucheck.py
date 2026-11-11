@@ -24,7 +24,9 @@ from pathlib import Path
 from .errors import ArbError
 
 FUNC = re.compile(r"^[0-9a-f]+ <([^>]+)>:$")
-INSN = re.compile(r"^\s+[0-9a-f]+:\s+(?:[0-9a-f]{4}\s(?:[0-9a-f]{4}\s)?)?\s*(\S+)\s*(.*)$")
+# objdump pads addresses to 8 digits: one that long (TS17 plugins run at
+# 0x18380000) starts the line
+INSN = re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{4}\s(?:[0-9a-f]{4}\s)?)?\s*(\S+)\s*(.*)$")
 TARGET = re.compile(r"<([^>+]+)(?:\+0x[0-9a-f]+)?>")
 VFP = re.compile(r"^(v[a-z]+|fmstat|fmxr|fmrx)(\.|$)")
 CPACR_FPU = "#15728640"         # 0x00f00000: CP10/CP11 access, as objdump writes an orr/bic of it

@@ -70,6 +70,21 @@ def test_parse() -> None:
                                          "floaty: 2 VFP instructions"]
 
 
+def test_parse_eight_digit_addresses() -> None:
+    """TS17 plugins run at 0x18380000: objdump pads none of those lines, and
+    the parser once read no instruction there, so every check passed"""
+    funcs = fpucheck.parse(
+        "18380020 <sinf>:\n"
+        "18380020:\tvldr\ts13, [pc, #188]\t; 183800e0 <sinf+0xc0>\n"
+        "18380024:\tbl\t18380104 <io_read>\n"
+        "\n"
+        "18380104 <io_read>:\n"
+        "18380104:\tbx\tlr\n")
+    assert funcs["sinf"].vfp == ["vldr"] and list(funcs["sinf"].calls) == ["io_read"]
+    assert fpucheck.check(funcs, ["io_read"]).failures == 0
+    assert fpucheck.check(funcs, ["sinf"]).failures == 1
+
+
 def test_check() -> None:
     r = fpucheck.check(fpucheck.parse(DISASSEMBLY), ["cb", "clean", "missing"])
     assert r.lines == [
