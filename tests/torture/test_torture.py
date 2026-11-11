@@ -518,6 +518,19 @@ def test_a_known_exit_refusal_is_not_a_failure() -> None:
             assert fails or "refused to quit" in s.notes[-1]
 
 
+def test_a_known_plugin_splash_is_expected_for_its_step() -> None:
+    """Key Remap's "Error Saving" for its empty keymap is expected in the
+    step that runs it; from another plugin it is a problem"""
+    saving = [("splash", "Error Saving")]
+    for plugin, expected in [("apps/keyremap.rock", True), ("apps/text_editor.rock", False)]:
+        with tempfile.TemporaryDirectory() as tmp, rockbox_run(Path(tmp)) as (_, s, _), \
+                mock.patch.object(rt.time, "sleep"), mock.patch.object(s, "plugin_keys"), \
+                mock.patch.object(s, "close_plugin", return_value=True):
+            assert rt.try_plugin(s, plugin) == plugin
+            problems = rt.message_problems(saving, *s.step_expected)
+            assert problems == ([] if expected else ['splash "Error Saving"'])
+
+
 def test_library_track_backs_out_of_dead_ends() -> None:
     """A stock card's folders hold no music: the walk backs out of them and
     finds the album; no library at all: None, within LIBRARY_LS listings"""

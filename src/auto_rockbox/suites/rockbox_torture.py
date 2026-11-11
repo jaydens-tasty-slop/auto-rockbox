@@ -179,6 +179,12 @@ KNOWN_PLUGIN_ERRORS: dict[str, str | None] = {
 KNOWN_EXIT_REFUSALS: dict[str, str] = {
     "sudoku.rock": r"^Illegal move!$",
 }
+# Error splashes a plugin shows, as upstream does, for an action random keys
+# reach: Key Remap will not save a keymap with fewer than four entries, and
+# the one it starts with is empty (keyremap_save_current(); TS17 sweep 28)
+KNOWN_PLUGIN_SPLASHES: dict[str, str] = {
+    "keyremap.rock": r"^Error Saving$",
+}
 CODEC_ERRORS = re.compile(r"codec load \d+ failed|ov_open failed|codec header error|"
                           r"no matching image|EOM|not enough memory")
 VIDEO_DROP_MAX = 0.05           # the Video Player's dropped share of due pictures
@@ -706,6 +712,7 @@ class RockboxTorture(TortureSuite):
         super().__init__(target, image, **kw)
         self.msg_next = 1               # the next `msgs` number (from 1 after a boot)
         self.pending: list[tuple[str, str]] = []    # messages a scenario read early
+        self.step_expected: list[re.Pattern[str]] = []  # and the ones this step may show
         self.messages: Counter[tuple[str, str]] = Counter()
         self.msgs_lost = 0
         self.decodes = DecodeHashes()
@@ -937,7 +944,8 @@ class RockboxTorture(TortureSuite):
             else:
                 self.messages[(kind, text)] += 1
         bad += message_problems(msgs, self.expected_msgs.get(self.step.name),
-                                SHARED_EXPECTED_MSGS.get(self.step.name))
+                                SHARED_EXPECTED_MSGS.get(self.step.name), *self.step_expected)
+        self.step_expected = []
         return [f"messages: {'; '.join(bad)[:300]}"] if bad else []
 
     def charge_check(self) -> list[str]:
@@ -1927,6 +1935,8 @@ def try_plugin(t: RockboxTorture, p: str) -> str:
     """P (under ROCKS) run, random keys (Select starts a game from its start
     menu), then out with the player's keys; a known refusal (its splash
     seen) is a note and a reboot"""
+    if splash := KNOWN_PLUGIN_SPLASHES.get(p.rsplit("/", 1)[-1]):
+        t.step_expected.append(re.compile(splash))
     t.sh(f"run {ROCKS}/{p}")
     time.sleep(3)
     t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200"], k=20))
