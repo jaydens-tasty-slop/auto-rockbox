@@ -34,7 +34,7 @@ What players differ in is declared by their subclass:
     main_menu      the main menu's items in order (root_menu.c)
     slow_codecs    /codectest file name prefixes known too slow or over a limit
     expected_msgs  per scenario, the error messages it provokes on purpose
-    charge_limit   % set at each boot (t_limit.cfg; HAVE_CHARGE_LIMIT builds)
+    charge_limit   % set at each boot (t_default.cfg; HAVE_CHARGE_LIMIT builds)
     features       what the build has that scenarios need (needs=):
                    lcd-gate      gate_on() reads the LCD controller's clock
                    fm-tune       fm_tune() tunes without the radio screen
@@ -772,7 +772,11 @@ class RockboxTorture(TortureSuite):
         """The settings files the steps load, by name in card_dir"""
         files = dict(CFGS)
         if self.charge_limit is not None:
-            files["t_limit.cfg"] = f"charge limit: {self.charge_limit}\n"
+            # in t_default.cfg, not a .cfg of its own: the dev shell's `cfg`
+            # waits 5 s for the UI thread, and the boot's database update can
+            # hold it longer, so a second `cfg` replaced the first (YP3
+            # 2026-11-11: the limit never applied, every step charged above it)
+            files["t_default.cfg"] += f"charge limit: {self.charge_limit}\n"
         return files
 
     # ---- the suite's hooks
@@ -816,8 +820,6 @@ class RockboxTorture(TortureSuite):
         self.sh("dryoff")               # a menu power-off returns to the host
         self.sh("repeat 0")
         self.sh(f"vol {VOLUME_DB}")
-        if self.charge_limit is not None:
-            self.sh(f"cfg {self.card_path('t_limit.cfg')}")
         # the run's light look from the boot on: crawl restores the settings
         # it saved at its first step, and a YP3's default cabbiev2 then came
         # back after every crawl step, refusing Vorbis and Opus and taking

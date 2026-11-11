@@ -50,7 +50,7 @@ EXPECTED_MSG = {"record": re.compile(r"(?i)not enough memory"),
                                      r"selection too big"),
                 # cabbiev2 leaves too little for Vorbis or Opus
                 "theme": re.compile(r"(?i)not enough memory to play|leaves little memory")}
-CHARGE_LIMIT = 80               # % (t_limit.cfg)
+CHARGE_LIMIT = 80               # % (in t_default.cfg)
 LCD_GATE_ACK = 0x40080068       # clock gate 0x5c (LCD controller): bit 28
 BT_LINK_TBL = 0x804128          # ROM link address table: 7 x {u8 in use, BD_ADDR}
 

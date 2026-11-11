@@ -113,10 +113,10 @@ def test_yp3_boot_and_steps() -> None:
         (req,) = p.requests
         assert isinstance(req, yt.Yp3Run) and req.seconds == 0 and req.usb
         assert req.settings == {"speaker": "0"}
-        assert sorted(sd for _, sd in req.pushes) == sorted(
-            f"/yp3dev/{n}" for n in [*rt.CFGS, "t_limit.cfg"])
-        assert (Path(tmp) / "t_limit.cfg").read_text() == "charge limit: 80\n"
-        assert {"dryoff", "cfg /yp3dev/t_limit.cfg", f"play {rt.PROBE}"} <= set(p.dev.sent)
+        assert sorted(sd for _, sd in req.pushes) == sorted(f"/yp3dev/{n}" for n in rt.CFGS)
+        assert (Path(tmp) / "t_default.cfg").read_text() == (rt.CFGS["t_default.cfg"]
+                                                             + "charge limit: 80\n")
+        assert {"dryoff", "cfg /yp3dev/t_default.cfg", f"play {rt.PROBE}"} <= set(p.dev.sent)
         assert s.library_track(album=True) is None      # codectest/ and yp3dev/ are no albums
         assert step(s, "meta") == []
         p.dev.charging, p.dev.level = True, 85

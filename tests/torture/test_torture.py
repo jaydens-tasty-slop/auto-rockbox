@@ -573,7 +573,9 @@ def test_boot_and_steps() -> None:
         assert (p.card / "rbtest" / "t_wake.cfg").read_text() == rt.CFGS["t_wake.cfg"]
         (req,) = p.requests
         assert (req.seconds, req.usb, req.settings) == (0, True, {})
-        assert f"play {rt.PROBE}" in p.dev.sent and not any("t_limit" in x for x in p.dev.sent)
+        assert f"play {rt.PROBE}" in p.dev.sent
+        # no charge limit for a player without one
+        assert (p.card / "rbtest" / "t_default.cfg").read_text() == rt.CFGS["t_default.cfg"]
         # the run's light look from the boot on, before crawl saves its settings
         assert "cfg /rbtest/t_default.cfg" in p.dev.sent
         assert (s.tone, s.theme_cfgs[-1]) == ("/rbtest/tone.mp3", "/rbtest/t_default.cfg")
