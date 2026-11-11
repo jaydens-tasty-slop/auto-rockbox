@@ -210,10 +210,13 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 # from the top; a held key stops at the end, its repeats never wrap), from
 # up to two levels down (Codebuster: an option under its Settings); a long
 # Select menu that opens on its second item with Quit two below (MazezaM's,
-# on Retry level); two long Selects, then Quit, the last item (Xobox on
-# YP3_PAD: a Select release toggles its pause and long Select opens its
-# menu only unpaused, so the first may only resume; a list ignores the
-# second, TS17 sweep step 496); last, the Select+Left chord three times
+# on Retry level); two long Selects, Left, then Quit, the last item, Down
+# held 2 s (Xobox on YP3_PAD: a Select release toggles its pause and long
+# Select opens its menu only unpaused, so the first may only resume; a list
+# ignores the second, TS17 sweep step 496. MazezaM's exit opens it unpaused
+# and picks Speed, where Left cancels; in the menu Left only reopens it, at
+# the item it kept, from which Down's repeats stop on Quit: TS17 sweep 28
+# step 492, every pass from that state); last, the Select+Left chord three times
 # (Rockpaint's quit on YP3_PAD and the only way out of its dialogs; a
 # half-drawn shape takes one press more); the YP3 pad's menu chord, Up+Left,
 # then Quit, the last item (PictureFlow, where Left scrolls the covers and is
@@ -228,7 +231,7 @@ MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
 PLUGIN_EXITS = ["SU* 800 U S", "U S", "4000 SU* 800 U S", "U S", "U S L S+ U S L L",
                 "L+ S+", "U+ S", "SD 800 U S", "D S U S", "L 300 L 300 D+ S",
                 "L+ 300 L 300 U S",
-                "S+ 300 D 300 D 300 S", "S+ 300 S+ 300 U S",
+                "S+ 300 D 300 D 300 S", "S+ 300 S+ 300 L 300 D++ S",
                 "SL 300 SL 300 SL", "UL 500 U S", "UL 300 UL", "L 300 U S 300 U+",
                 "SD 800 SU* 800 U S"]
 # Before Home: Back presses, then plugin exits, for screens that ignore Home
