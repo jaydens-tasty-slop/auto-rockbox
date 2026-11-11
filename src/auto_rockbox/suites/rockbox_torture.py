@@ -131,6 +131,7 @@ PLUGIN_DIRS = ("games", "apps", "demos")
 PLUGIN_SKIP = ("battery_bench.rock", "lastfm_scrobbler.rock", "xrick.rock")
 VIDEO_DIR = "/video"
 VIDEO_PLAYER = f"{ROCKS}/viewers/videoplayer.rock"
+VIDEO_CFG = f"{ROCKS}/viewers/videoplayer.cfg"     # its settings, next to it
 VIDEO_EXT = (".avi", ".mkv", ".mp4", ".mov")
 RECORDINGS = "/recordings"
 CARD_S = 180                    # a mass storage boot that puts the settings files on the card
@@ -1715,6 +1716,11 @@ def video(t: RockboxTorture) -> str | None:
         return f"skipped: no videos in {VIDEO_DIR}"
     v = t.rng.choice(vids)
     t.ready_to_play()
+    # Its settings at their defaults: the keys follow the picture as "Turn
+    # video" holds it, and the quit below knows the clockwise turn only
+    # (torture 30 step 116: an earlier run's keys left it anticlockwise,
+    # where Left is Up, and Right picked an option that kept the menu)
+    t.sh(f"rm {VIDEO_CFG}")
     h = t.health()
     t.sh(f"run {VIDEO_PLAYER} {VIDEO_DIR}/{v}")
     time.sleep(t.rng.uniform(4, 20))
