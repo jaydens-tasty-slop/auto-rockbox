@@ -34,6 +34,9 @@ on repeat. Method, helpers and conditions: [battery.md](battery.md).
 
 Each Rockbox run must show all of these:
 
+- [ ] The same level as the stock run: `arb bench watch --ref` passed its
+      10-minute music check (within 1 dB of stock over the same stretch
+      of the playlist).
 - [ ] Continuous playback: no gaps on the Line In level log (wired) and no
       link drops in the Bluetooth watch log.
 - [ ] A clean power-off at the configured cutoff, logged by the battery

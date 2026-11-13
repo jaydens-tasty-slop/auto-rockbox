@@ -7,7 +7,7 @@ from argparse import Namespace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .. import bench, linein
+from .. import attention, bench, linein
 from ..registry import Context, arg, command, group
 
 
@@ -37,6 +37,44 @@ def end(ctx: Context, args: Namespace) -> int:
         return 1
     print(r)
     return 0
+
+
+def match(ctx: Context, args: Namespace) -> int:
+    """Compares the run's first seconds of music from T0 with the reference
+    run's (REF from REF_T0) over the same stretch of the playlist. Exit 0:
+    same music within the tolerance; 3: not; 1: too few seconds logged yet"""
+    try:
+        m = bench.level_match(args.log, _utc(args.t0), args.ref, _utc(args.ref_t0),
+                              seconds=args.seconds)
+    except (OSError, ValueError, bench.BenchError) as e:
+        print(f"arb bench match: {e}", file=sys.stderr)
+        return 1
+    if m is None:
+        print(f"fewer than {args.seconds} s logged from {args.t0}", file=sys.stderr)
+        return 1
+    print(m)
+    return 0 if m.ok(args.tolerance) else 3
+
+
+def watch(ctx: Context, args: Namespace) -> int:
+    """Follows a run from Play to its end, the way to watch every run. It
+    prints t0 (--t0, or the first loud second after --after, default now),
+    then the run's first 10 min against --ref (the reference run's level log
+    and t0, e.g. stock's), then the hours once QUIET s are silent. Exit 0:
+    the run is over; 3: the level or the music is not the reference's (stop
+    the run; the attention cue rings)."""
+    ref = (Path(args.ref[0]), _utc(args.ref[1])) if args.ref else None
+    after = _utc(args.after) if args.after else datetime.now(UTC)
+    try:
+        rc = bench.watch(args.log, after, ref=ref, t0=_utc(args.t0) if args.t0 else None,
+                         tolerance=args.tolerance, quiet=args.quiet)
+    except (OSError, ValueError, bench.BenchError) as e:
+        print(f"arb bench watch: {e}", file=sys.stderr)
+        return 1
+    if rc == 3:
+        attention.ring(attention.settings(ctx.ws)[0],
+                       f"battery run {args.log.name}: level is not the reference's, stop it")
+    return rc
 
 
 def bt_watch(ctx: Context, args: Namespace) -> int:
@@ -94,6 +132,32 @@ command("bench end", target=False, help="has the run ended? (from a level log)",
     arg("--quiet", type=int, default=300, metavar="S",
         help="silent seconds that end it (default 300)"),
 ])(end)
+
+_TOLERANCE = arg("--tolerance", type=float, default=bench.MATCH_DB, metavar="DB",
+                  help=f"largest level difference allowed (default {bench.MATCH_DB})")
+
+command("bench match", target=False, help="a run's first minutes against the reference run's",
+        args=[
+    arg("log", type=Path),
+    arg("t0", help="the run's start, UTC ISO"),
+    arg("ref", type=Path, help="the reference run's level log"),
+    arg("ref_t0", help="the reference run's start, UTC ISO"),
+    arg("--seconds", type=int, default=bench.MATCH_S, metavar="S",
+        help=f"seconds compared (default {bench.MATCH_S})"),
+    _TOLERANCE,
+])(match)
+
+command("bench watch", target=False,
+        help="follow a run: t0, its level against the reference, its end", args=[
+    arg("log", type=Path),
+    arg("--ref", nargs=2, metavar=("LOG", "T0"), type=str,
+        help="the reference run's level log and start (UTC ISO)"),
+    arg("--t0", metavar="ISO", help="the run's start, if already known"),
+    arg("--after", metavar="ISO", help="t0 is the first loud second after this (default now)"),
+    _TOLERANCE,
+    arg("--quiet", type=int, default=300, metavar="S",
+        help="silent seconds that end it (default 300)"),
+])(watch)
 
 command("bench bt-watch", target=False, help="watch a Bluetooth run's link", args=[
     arg("addr", help="the player's Bluetooth address"),
