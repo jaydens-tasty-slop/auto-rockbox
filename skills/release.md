@@ -73,6 +73,11 @@ Each Rockbox run must show all of these:
       (bring-up.md, Ground rules): the power-on key rule with USB in, and the
       debug menu's reboot into recovery mode. A normal power-on press still
       boots, and the rule's hold ends well before the PMU's long-press reset.
+- [ ] **With a rescue stub** (bring-up.md): the candidate carries the same
+      stub bytes as the installed one, so an upgrade leaves the stub's
+      sector alone. The installer writes the stub on a new install only.
+      Recovery works with the firmware sector erased and with an ELF file
+      flashed in its place.
 - [ ] **The way back to stock works from the release build**: follow the
       published recovery steps literally on a player running the candidate.
       Stock must boot, play and keep its settings or calibration.

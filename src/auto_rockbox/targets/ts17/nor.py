@@ -7,26 +7,34 @@ unless `raw`. Writes call the boot ROM's own SPI-NOR routines (CALL ops),
 which store bytes as given: an image for XIP is encoded first (rdm.py).
 Calling ROM code is fine for tooling; Rockbox's flash driver is its own.
 
-Flash map: boot sectors (mbrec A/B, partition tables) below 0x4000, which
-writes refuse unless asked; stock's application fw0_sys at 0x14000, which
-the dev loop replaces (stock comes back by restoring it from a dump of the
-stored cells, `nor dump --raw`).
+Flash map: the boot chain (mbrec A/B, partition tables, stock's recovery
+image fw0_rec) below 0x14000, which writes refuse unless asked; stock's
+application fw0_sys at 0x14000, which our image replaces (stock comes back by
+restoring it from a dump of the stored cells, `nor dump --raw`). Our image's
+first sector is Rockbox's rescue stub (rescue-lark.S), written once: changing
+it, or putting one there, takes `rescue`.
 """
 
 from __future__ import annotations
 
+import struct
 from collections.abc import Callable
 from typing import BinaryIO
 
+from . import rdm
 from .adfu import Ts17Error
 from .gadget import Ops, Session
 
 FLASH_SIZE = 0x400000
 SECTOR = 0x1000                 # erase unit
-BOOT_END = 0x4000               # mbrec A/B and the partition tables end here
-FW0_SYS = 0x14000               # stock's application: the dev image runs from here
+FW0_SYS = 0x14000               # stock's application: our image runs from here
 FW0_SYS_SIZE = 0x1A7000
+BOOT_END = FW0_SYS              # mbrec A/B, the partition tables and fw0_rec end here
 XIP_BASE = 0x10000000           # remap entry 0's virtual base, where fw0_sys runs
+RESCUE = FW0_SYS                # the rescue stub's sector, ahead of Rockbox
+RESCUE_MARK = b"RBRS"           # at +8 in the stub
+APP_BASE = XIP_BASE + SECTOR    # Rockbox's vector table, after the stub
+RAM0_BASE, RAM0_SIZE = 0x01000000, 0x24000  # Rockbox's initial stack pointer is in here
 
 NOR_CLK_DIV = 0x40001020        # NOR clock divider
 NOR_CLK_DIV_192_3 = 0x102       # 192 MHz PLL / 3, as mbrec sets it
@@ -113,16 +121,58 @@ def _rom_read(s: Session, addr: int, n: int) -> bytes:
     return s.link.read(COPY_BUF, n)
 
 
+def has_rescue(plain: bytes) -> bool:
+    """PLAIN (an image as the CPU reads it) starts with the rescue stub"""
+    return plain[8:12] == RESCUE_MARK
+
+
+def check_image(plain: bytes, name: str) -> int:
+    """Raises unless PLAIN is an image the boot chain can start from
+    fw0_sys; returns its reset vector. With the rescue stub, Rockbox's
+    vectors after it must pass the stub's own check (else the stub would
+    send every boot to download mode)."""
+    if plain[:4] == b"\x7fELF":
+        raise Ts17Error(f"{name} is an ELF file: flash its `objcopy -O binary` image")
+    (reset,) = struct.unpack_from("<I", plain, 4)
+    if not has_rescue(plain):
+        if not XIP_BASE <= reset - 1 < XIP_BASE + len(plain):
+            raise Ts17Error(f"{name}: reset vector {reset:08x} is not inside the image "
+                            f"at {XIP_BASE:08x}")
+        return reset
+    if not (reset & 1 and XIP_BASE < reset < APP_BASE):
+        raise Ts17Error(f"{name}: the rescue stub's reset vector {reset:08x} is not in it")
+    if len(plain) < SECTOR + 8:
+        raise Ts17Error(f"{name}: nothing after the rescue stub")
+    sp, entry = struct.unpack_from("<II", plain, SECTOR)
+    if ((sp - RAM0_BASE - 1) & 0xFFFFFFFF >= RAM0_SIZE or not entry & 1
+            or (entry - APP_BASE) & 0xFFFFFFFF >= FW0_SYS_SIZE - SECTOR):
+        raise Ts17Error(f"{name}: the stub would refuse Rockbox's vectors "
+                        f"(SP {sp:08x}, reset {entry:08x})")
+    return reset
+
+
+def _check_rescue(s: Session, want: bytes) -> None:
+    """Refuses to change the rescue stub's sector to WANT (cells) while a
+    stub is stored there or WANT holds one"""
+    have = _rom_read(s, RESCUE, SECTOR)
+    if have != want and (has_rescue(rdm.decode(have)) or has_rescue(rdm.decode(want))):
+        raise Ts17Error(f"this would change the rescue stub at {RESCUE:#x}: install or "
+                        "replace it on purpose with `nor program --rescue`")
+
+
 def write_cells(s: Session, start: int, cells: bytes, *, boot: bool = False,
-                progress: Progress | None = None) -> int:
+                rescue: bool = False, progress: Progress | None = None) -> int:
     """Makes flash at START match CELLS: per sector, read what is stored and
     if it differs erase, program and verify. Identical sectors are left
-    alone to spare wear. Returns how many were rewritten."""
+    alone to spare wear. Returns how many were rewritten. The boot chain
+    takes BOOT, a change to the rescue stub RESCUE."""
     if start % SECTOR or len(cells) % SECTOR or start + len(cells) > FLASH_SIZE:
         raise Ts17Error("a flash write must be whole 4 KiB sectors inside the flash")
     if start < BOOT_END and not boot:
-        raise Ts17Error(f"the range touches the boot sectors (below {BOOT_END:#x})")
+        raise Ts17Error(f"the range touches the boot chain (below {BOOT_END:#x})")
     s.values(setup(raw=True))
+    if start <= RESCUE < start + len(cells) and not rescue:
+        _check_rescue(s, cells[RESCUE - start:RESCUE - start + SECTOR])
     changed = 0
     for addr in range(start, start + len(cells), SECTOR):
         want = cells[addr - start:addr - start + SECTOR]

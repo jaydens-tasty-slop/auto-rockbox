@@ -42,9 +42,9 @@ def _progress(msg: str) -> None:
     print(f"\r{msg}", end="", file=sys.stderr, flush=True)
 
 
-def _write(ctx: Context, start: int, cells: bytes, boot: bool) -> None:
+def _write(ctx: Context, start: int, cells: bytes, boot: bool, rescue: bool) -> None:
     with _session(ctx) as s:
-        n = nor.write_cells(s, start, cells, boot=boot, progress=print)
+        n = nor.write_cells(s, start, cells, boot=boot, rescue=rescue, progress=print)
     print(f"{n} of {len(cells) // nor.SECTOR} sectors rewritten; "
           f"{start:06x}+{len(cells):x} matches")
 
@@ -94,32 +94,40 @@ def nor_restore(ctx: Context, args: Namespace) -> None:
     """Makes flash match a cell image (a `dump --raw`) at the same offsets:
     START to the image's end, or LENGTH bytes. Without IMAGE: stock's
     fw0_sys from [targets.ts17] stock_cells. Rewrites only the 4 KiB
-    sectors that differ, and verifies each."""
+    sectors that differ, and verifies each. Stock's fw0_sys replaces the
+    rescue stub with stock's own start, which is the way back to stock."""
     image, start, length = args.image, args.start, args.length
+    rescue = args.rescue
     if image is None:
         image = ctx.t.conf.opt_path("stock_cells")
         if image is None:
             raise SystemExit("no IMAGE, and [targets.ts17] stock_cells is not set")
-        start, length = nor.FW0_SYS, nor.FW0_SYS_SIZE
+        start, length, rescue = nor.FW0_SYS, nor.FW0_SYS_SIZE, True
     data = image.read_bytes()
     end = len(data) if length is None else start + length
     if not start < end <= len(data):
         raise SystemExit(f"{image} ({len(data):#x} bytes) has no {start:#x}-{end:#x}")
-    _write(ctx, start, data[start:end], args.boot)
+    _write(ctx, start, data[start:end], args.boot, rescue)
 
 
 def nor_program(ctx: Context, args: Namespace) -> None:
     """A plain file at START, encoded for XIP reads (the randomizer on); the
     rest of its last sector is left erased. Rewrites only the 4 KiB sectors
-    that differ, and verifies each."""
+    that differ, and verifies each. At fw0_sys the file must be an image the
+    boot chain can start (nor.check_image)."""
     data = args.file.read_bytes()
+    if data[:4] == b"\x7fELF" or args.start == nor.FW0_SYS:
+        nor.check_image(data, args.file.name)
     _write(ctx, args.start, nor.pad(rdm.encode(nor.pad(data, rdm.XIP_RUN)), nor.SECTOR),
-           args.boot)
+           args.boot, args.rescue)
 
 
 WINDOW_ARGS = [arg("--raw", action="store_true", help="the stored cells (randomizer off)"),
                arg("--crypt", action="store_true", help="set the remap's crypt bit (31)")]
-BOOT_ARG = arg("--boot", action="store_true", help="allow the boot sectors below 0x4000")
+BOOT_ARG = arg("--boot", action="store_true",
+               help="allow the boot chain below 0x14000 (mbrec, partition tables, fw0_rec)")
+RESCUE_ARG = arg("--rescue", action="store_true",
+                 help="allow installing or replacing the rescue stub at 0x14000")
 TS17 = {"ts17"}
 
 group("nor", help="the NOR flash: ident, map, dump, restore, program")
@@ -133,9 +141,10 @@ command("nor dump", target=TS17, help="NOR to a file",
 command("nor restore", target=TS17, help="write back a --raw dump (changed sectors only)",
         args=[arg("image", type=Path, nargs="?"),
               arg("start", type=number, nargs="?", default=0),
-              arg("length", type=number, nargs="?"), BOOT_ARG])(nor_restore)
+              arg("length", type=number, nargs="?"), BOOT_ARG, RESCUE_ARG])(nor_restore)
 command("nor program", target=TS17, help="write a plain file, encoded for XIP",
-        args=[arg("file", type=Path), arg("start", type=number), BOOT_ARG])(nor_program)
+        args=[arg("file", type=Path), arg("start", type=number), BOOT_ARG,
+              RESCUE_ARG])(nor_program)
 
 
 @command("reboot", target=TS17, help="reset into download mode, or into stock firmware",

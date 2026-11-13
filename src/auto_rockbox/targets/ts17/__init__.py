@@ -105,10 +105,8 @@ class Ts17(Target):
     def launch(self, req: RunRequest) -> None:
         config = devblock.run_config(self.run_config(req))
         data = self._flat(req.image)
-        sp, reset = struct.unpack_from("<II", data)
-        if not nor.XIP_BASE <= reset - 1 < nor.XIP_BASE + len(data):
-            raise Ts17Error(f"{req.image.name}: reset vector {reset:08x} is not inside the "
-                            f"image at {nor.XIP_BASE:08x}")
+        reset = nor.check_image(data, req.image.name)
+        sp = struct.unpack_from("<I", data)[0]
         cells = nor.pad(rdm.encode(nor.pad(data, rdm.XIP_RUN)), nor.SECTOR)
         if len(cells) > nor.FW0_SYS_SIZE:
             raise Ts17Error(f"{req.image.name}: {len(cells):#x} bytes do not fit fw0_sys "

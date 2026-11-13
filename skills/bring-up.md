@@ -28,8 +28,9 @@ conclusions.**
   bootloader stages that lead to it, are the only things that can't be fixed
   with a USB cable. Find out which flash areas they live in, and make your
   writer refuse them (the YP3 writer refuses below `0xE000` and from
-  `0x1FC000` up, and the TS17 writer refuses the boot sectors without
-  `--boot`).
+  `0x1FC000` up, and the TS17 writer refuses the whole boot chain below
+  `0x14000`, including stock's recovery stage fw0_rec, without `--boot`).
+  Guard every stage that leads to recovery, not only the first sectors.
 - **Always keep a way back from your own firmware, by hand and without a
   host.** Once the port replaces stock, stock's ways into recovery mode go
   with it: the TS17's on/off + USB rule lived in stock's application, and
@@ -49,6 +50,36 @@ conclusions.**
   Verify every claimed way in on hardware, from the port's own firmware,
   not from stock: what reached recovery with stock flashed may not with the
   port flashed.
+- **No key into recovery in the boot ROM? Put a write-once rescue stub ahead
+  of the firmware.** The YP3's ROM checks Down at reset, so nothing flashed
+  can take that away. The TS17's ROM checks no key or pin, so its key rule
+  lived in the very image the dev loop rewrites daily. A wrong file (an ELF
+  instead of the flat image), a half-written image or a startup regression
+  then strands the player before the rule runs. The fix is a small stub in
+  the image's first erase sector, where the boot chain jumps, with the
+  firmware linked right after it (TS17: `rescue-lark.S`, ~70 instructions).
+  The stub:
+  - sets the recovery word and starts the watchdog first, and never feeds
+    it, so any hang or fault after those stores lands in recovery;
+  - checks the key rule, with USB power required;
+  - checks the firmware's vectors (SP in RAM, reset vector inside the image)
+    and goes to recovery if they are wrong;
+  - jumps with the recovery word still set, uses no stack, and leaves the
+    caller's registers alone;
+  - depends only on its own constants, so every build carries identical
+    bytes and the writer skips its sector.
+
+  The writer refuses to change that sector, or to put a stub there, unless
+  asked (`--rescue`). A flasher for users writes it on a new install only.
+  Before the first flash, run the stub's bytes from a build through an
+  emulator on every branch, with modelled registers and no RAM mapped
+  (`tests/ts17/test_rescue_stub.py`, unicorn), and check that broken copies
+  fail the test. Then run it first as a launch from recovery mode, where the
+  hook has already set the recovery word, so even a stub that never starts
+  comes back. Only then try a cold boot. Prefer a key that is easy to reach
+  with cables in: the TS17 accepts the pad's Down as well as on/off, and
+  since plugging USB in powers it on, Down held while plugging in is
+  enough.
 - **Know your charger.** Boot ROM USB modes often leave the charger on with
   nobody supervising it. A player left in that mode for hours goes far past
   a normal full charge. Find the charge enable bit early, and make the host
