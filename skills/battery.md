@@ -46,16 +46,16 @@ them identical for every run:
 - **Music**: one folder of CBR MP3s (128 kbit/s, 44.1 kHz, no album art, about
   2 hours), copied to every card as `/battery/`, on repeat all with shuffle
   off. Use real music, not a tone: a decoder's load depends on the signal.
-- **Level**: play the reference tone (`arb media`'s `tone.mp3`) and set each
-  firmware's volume step so Line In reads the same RMS within 0.5 dB
-  (`arb linein analyse`). Note the step numbers. Line In stays at unity gain
-  for the whole session. Then make sure the run itself plays at that level:
-  `arb bench watch --ref` compares its first 10 min of music with the
-  reference run's and stops it if they differ by more than 1 dB. A tone
-  check alone once let a TS17 run play a whole day 10 dB quiet: Rockbox
+  The folder's first file is the level tone (`arb media`'s `tone.mp3`, as
+  `00.mp3`): every pass of the playlist then proves the run's level.
+- **Level**: play the level tone and set each firmware's volume step so
+  Line In reads the same RMS within 0.5 dB (`arb linein analyse`). Note the
+  step numbers and that RMS: it is `bench watch --tone`. Line In stays at
+  unity gain for the whole session. A check before the start does not prove
+  the run's level. One TS17 run played a whole day 10 dB quiet: Rockbox
   keeps the volume in `.rockbox/.resume.cfg`, which loads after
   `config.cfg`, so a `volume:` line written only into `config.cfg` is
-  overridden. Set it on the player, or in `.resume.cfg`.
+  overridden. Set it on the player, or in `.resume.cfg` too.
 - **Load**: the same real headphones (about 32 ohm) on a splitter together
   with Line In. A line input alone barely loads the amplifier.
 - **Display**: the shortest backlight timeout, the same brightness, and the
@@ -77,21 +77,17 @@ Wired:
 
 ```
 arb linein serve --level-log build/battery/linein-RA1.csv   # leave running
-arb bench watch build/battery/linein-RA1.csv \
-    --ref build/battery/linein-SA1.csv 2026-10-25T20:58:35Z   # start before Play
-# press play on the player
+arb bench watch build/battery/linein-RA1.csv --tone -35.8   # start before Play
+# play /battery/ from its first file, the tone
 ```
 
-`bench watch` prints t0 (the first loud second), then after 10 minutes the
-run's level against the reference run's over the same stretch of the
-playlist. It exits 3 and rings the attention cue if the level differs by
-more than 1 dB, or if the music is not the reference's (other files, order
-or shuffle). Stop the run then, fix it and start again: a mismatched run
-cannot be compared. Otherwise it exits 0 at the end with the hours. The
-reference is the matching stock run (stock wired for a Rockbox wired run).
-The first stock run has none, so check its level by hand against the tone.
-`bench match` makes the same comparison once, and `bench end` reports the
-end alone.
+`bench watch` prints t0 (the first loud second), then the level of every
+play of the tone: at the start and once per pass of the playlist, so a
+volume change mid-run shows too. It exits 3 and rings the attention cue if
+a tone is more than 1 dB off `--tone`, or if no tone plays in the first 2
+minutes. Stop the run then, fix it and start again: a run at another level
+cannot be compared. Otherwise it exits 0 at the end with the hours.
+`bench end` reports the end alone.
 
 Bluetooth: route the player's stream into a null sink, so nobody hears it
 and the level log has something to read.

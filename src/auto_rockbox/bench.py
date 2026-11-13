@@ -1,18 +1,19 @@
 """Battery-run helpers: a per-second level log of an audio source, the start
-and end of a playback run read from that log, its music level against a
-reference run's, the end of a Bluetooth run read from the link, and the
-discharge table from the player's battery log.
+and end of a playback run read from that log, the level tone in it, the end
+of a Bluetooth run read from the link, and the discharge table from the
+player's battery log.
 
 A run plays music until the player powers itself off. Its end on this PC is
 the music going silent (Line In, or the A2DP stream routed to a null sink),
 which the level log records; a Bluetooth run also ends when the link drops
 and the player no longer answers a page.
 
-Runs compare only at the same output level. A tone check before the start
-does not prove the run's level: a setting can fail to take, so the run's
-first minutes of music are compared with the reference run's (stock's) over
-the same stretch of the playlist, and a run off by more than a decibel is
-stopped there, not found out a day later.
+Runs compare only at the same output level, and a check before the start
+does not prove the run's level: a setting can fail to take. So the level
+tone is the playlist's first file, and every time it plays the run's level
+is read from the log and checked against the calibrated one. A run that is
+off stops in its first minute, not a day later. The tone is easy to find:
+a sine's peak is 3 dB over its RMS, and music's is ~13 dB.
 
     [bench]
     sink = "arb_null"   # the null sink a Bluetooth run's stream plays into;
@@ -24,8 +25,8 @@ from __future__ import annotations
 import csv
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -39,11 +40,12 @@ POLL_S = 10
 PAGE_S = 300                    # how long a dropped player is paged
 PAGE_RETRY_S = 20
 CURVE_WINDOW_S = 120            # a table entry is the median over +-this
-MATCH_S = 600                   # the run's first seconds of music compared with the reference
-MATCH_LAG_S = 300               # how far apart the two starts may be in the playlist
-MATCH_DB = 1.0                  # a level difference that stops the run
-MATCH_CORR = 0.7                # below this the run is not playing the reference's music
-FLOOR_DB = -100.0               # digital silence (an empty field) in the comparison
+TONE_CREST_DB = (2.6, 3.6)      # a sine's peak over its RMS (music: ~13 dB)
+TONE_MIN_S = 6                  # steady sine seconds that make a tone
+TONE_STEADY_DB = 1.0            # a tone's seconds stay this close to its first
+TONE_PLAY_S = 25                # tones this close after one are the same play (its 12 dB step)
+TONE_WITHIN_S = 120             # the run's first tone comes this soon after t0
+TONE_TOLERANCE_DB = 1.0         # a level difference that stops the run
 WATCH_POLL_S = 30
 
 
@@ -113,110 +115,91 @@ def first_sound(log: Path, after: datetime) -> datetime | None:
     return None
 
 
-def _rms_rows(log: Path, start: datetime) -> tuple[list[datetime], np.ndarray]:
-    """The level log from START on: each logged second's time and (L, R)
-    RMS dBFS, digital silence at FLOOR_DB"""
-    times: list[datetime] = []
-    rows: list[list[float]] = []
+@dataclass(frozen=True)
+class Tone:
+    """One play of the level tone in a level log: its louder (first) half"""
+
+    at: datetime                    # its first steady second
+    db: tuple[float, float]         # median RMS, L and R, dBFS
+
+    def off(self, want: float) -> float:
+        """The larger channel's difference from WANT dBFS"""
+        return max(abs(d - want) for d in self.db)
+
+
+def _steady(run: list[tuple[datetime, float, float]]) -> Tone | None:
+    if len(run) < TONE_MIN_S:
+        return None
+    a = np.array([(left, right) for _, left, right in run])
+    return Tone(run[0][0], (float(np.median(a[:, 0])), float(np.median(a[:, 1]))))
+
+
+def tones(log: Path, start: datetime) -> list[Tone]:
+    """Each play of the level tone in the log from START on. A tone is
+    TONE_MIN_S or more seconds whose left peak is a sine's TONE_CREST_DB over
+    its RMS, the RMS staying within TONE_STEADY_DB; of the tones within
+    TONE_PLAY_S of each other (the tone file steps down 12 dB halfway) only
+    the loudest counts."""
+    found: list[Tone] = []
+    run: list[tuple[datetime, float, float]] = []
+
+    def close() -> None:
+        tone = _steady(run)
+        if tone is None:
+            return
+        if found and (tone.at - found[-1].at).total_seconds() <= TONE_PLAY_S:
+            if tone.db[0] > found[-1].db[0]:
+                found[-1] = tone
+        else:
+            found.append(tone)
+
     with log.open() as f:
         for row in csv.reader(f):
             t = datetime.fromisoformat(row[0])
-            if t >= start:
-                times.append(t)
-                rows.append([float(v) if v else FLOOR_DB for v in (row[2], row[4])])
-    return times, np.array(rows).reshape(-1, 2)
-
-
-def _mean_db(a: np.ndarray) -> tuple[float, float]:
-    """Mean power of per-second RMS dB values, L and R"""
-    p = 10 * np.log10(np.mean(10 ** (a / 10), axis=0))
-    return float(p[0]), float(p[1])
-
-
-@dataclass(frozen=True)
-class LevelMatch:
-    """A run's first seconds of music against the reference run's over the
-    same stretch of the playlist, both measured over the seconds where both
-    play (a reference with a gap, say a re-seated cable, still compares)"""
-
-    run_db: tuple[float, float]     # mean power, L and R, dBFS
-    ref_db: tuple[float, float]
-    lag: int                        # s: the stretch's start from the reference's t0
-    corr: float                     # per-second left RMS, run against reference
-    both: int                       # seconds that play in both
-    seconds: int
-
-    @property
-    def diff(self) -> tuple[float, float]:
-        return self.run_db[0] - self.ref_db[0], self.run_db[1] - self.ref_db[1]
-
-    def ok(self, tolerance: float = MATCH_DB) -> bool:
-        return self.corr >= MATCH_CORR and all(abs(d) <= tolerance for d in self.diff)
-
-    def __str__(self) -> str:
-        if self.both < self.seconds // 2:
-            return (f"only {self.both} of the first {self.seconds} s play in both runs: "
-                    "the run is silent or far quieter than the reference")
-        if self.corr < MATCH_CORR:
-            return (f"the music is not the reference's (best match {self.corr:.2f} over "
-                    f"{self.seconds} s): other files, order or shuffle")
-        (rl, rr), (fl, fr), (dl, dr) = self.run_db, self.ref_db, self.diff
-        return (f"level over the first {self.seconds} s: L {rl:.1f} R {rr:.1f} dBFS, "
-                f"reference L {fl:.1f} R {fr:.1f}: L {dl:+.1f} R {dr:+.1f} dB "
-                f"(reference stretch at {self.lag:+d} s, match {self.corr:.2f}, "
-                f"{self.both} s in both)")
-
-
-def level_match(log: Path, t0: datetime, ref: Path, ref_t0: datetime, *,
-                seconds: int = MATCH_S, max_lag: int = MATCH_LAG_S) -> LevelMatch | None:
-    """The run's first SECONDS logged seconds from T0 against the reference
-    run's; None until the run has that many. The reference's stretch is the
-    one starting within MAX_LAG s of REF_T0 whose per-second left RMS
-    correlates best with the run's over the seconds where both play, so the
-    two starts need not line up."""
-    run = _rms_rows(log, t0)[1][:seconds]
-    if len(run) < seconds:
-        return None
-    times, rows = _rms_rows(ref, ref_t0 - timedelta(seconds=max_lag))
-    s0 = next((i for i, t in enumerate(times) if t >= ref_t0), len(times))
-    if len(rows) - s0 < seconds:
-        raise BenchError(f"{ref} has fewer than {seconds} s from {ref_t0.isoformat()}")
-    best = LevelMatch(_mean_db(run), _mean_db(rows[s0:s0 + seconds]), 0, 0.0, 0, seconds)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        for d in range(-min(max_lag, s0), max_lag + 1):
-            seg = rows[s0 + d:s0 + d + seconds]
-            if len(seg) < seconds:
-                break
-            both = (run[:, 0] > linein.SILENT_DB) & (seg[:, 0] > linein.SILENT_DB)
-            n, enough = int(both.sum()), best.both >= seconds // 2
-            if n < seconds // 2:
-                if not enough and n > best.both:
-                    best = replace(best, lag=d, both=n)
+            if t < start:
                 continue
-            c = float(np.nan_to_num(np.corrcoef(run[both, 0], seg[both, 0])[0, 1]))
-            if not enough or c > best.corr:
-                best = LevelMatch(_mean_db(run[both]), _mean_db(seg[both]), d, c, n, seconds)
-    return best
+            if not all(row[2:5]):               # digital silence
+                close()
+                run = []
+                continue
+            left, peak, right = (float(v) for v in row[2:5])
+            if not (left > linein.SILENT_DB
+                    and TONE_CREST_DB[0] < peak - left < TONE_CREST_DB[1]):
+                close()
+                run = []
+            elif run and abs(left - run[0][1]) <= TONE_STEADY_DB:
+                run.append((t, left, right))
+            else:
+                close()
+                run = [(t, left, right)]
+    close()
+    return found
 
 
-def watch(log: Path, after: datetime, *, ref: tuple[Path, datetime] | None = None,
-          t0: datetime | None = None, tolerance: float = MATCH_DB, quiet: int = 300,
+def watch(log: Path, after: datetime, *, tone_db: float | None = None,
+          t0: datetime | None = None, tolerance: float = TONE_TOLERANCE_DB, quiet: int = 300,
           echo: Callable[[str], object] = print, poll: float = WATCH_POLL_S) -> int:
     """Follows a run's level log to its end: t0 (T0, or the first loud second
-    after AFTER), then its first MATCH_S s against REF (the reference run's
-    log and t0), then the end (QUIET silent seconds). 0: the run is over;
-    3: its level or music is not the reference's, so stop it now."""
-    start, checked = t0, ref is None
+    after AFTER), every play of the level tone against TONE_DB (its
+    calibrated Line In RMS), then the end (QUIET silent seconds). 0: the run
+    is over; 3: a tone is more than TOLERANCE dB off, or none came in the
+    first TONE_WITHIN_S s, so stop the run now."""
+    start, seen = t0, 0
     while True:
         if start is None and (start := first_sound(log, after)) is not None:
             echo(f"t0 {start.isoformat()}: music started")
-        if start is not None and ref is not None and not checked:
-            m = level_match(log, start, *ref)
-            if m is not None:
-                echo(str(m))
-                if not m.ok(tolerance):
+        if start is not None and tone_db is not None:
+            found = tones(log, start)
+            for tone in found[seen:]:
+                echo(f"level tone at {tone.at.isoformat(timespec='seconds')}: "
+                     f"L {tone.db[0]:.1f} R {tone.db[1]:.1f} dBFS, want {tone_db:.1f}")
+                if tone.off(tone_db) > tolerance:
                     return 3
-                checked = True
+            seen = len(found)
+            if not found and (_now() - start).total_seconds() > TONE_WITHIN_S:
+                echo(f"no level tone in the first {TONE_WITHIN_S} s: is it the playlist's "
+                     "first file, and did Play start there?")
+                return 3
         if start is not None and (r := run_end(log, start, quiet)) is not None:
             echo(str(r))
             return 0

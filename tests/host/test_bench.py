@@ -20,7 +20,7 @@ from auto_rockbox.workspace import Workspace
 ROOT = Path(__file__).resolve().parents[3]          # the port's checkout
 RA1 = ROOT / "build/battery/battlog-RA1.csv"
 TS17_SA1 = ROOT / "build/battery/ts17-linein-SA1.csv"   # TS17 stock, wired
-TS17_RA1 = ROOT / "build/battery/ts17-linein-RA1.csv"   # Rockbox at -21 dB, not -11
+TS17_RA1 = ROOT / "build/battery/ts17-linein-RA1.csv"   # TS17 Rockbox, wired
 RA1_TABLE = [3350, 3551, 3690, 3791, 3834, 3860, 3890, 3976, 4006, 4021, 4075]
 
 HEADER = "uptime_s,mv,level,playing,charging,cpu_mhz\n"
@@ -107,88 +107,80 @@ class TestRunEnd(unittest.TestCase):
 
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
+Row = tuple[float, float] | None        # (left RMS, peak over RMS) dB; None: digital silence
 
 
-def music(seconds: int, seed: int = 1) -> list[float]:
-    """Per-second RMS of a made-up playlist: -40 dB give or take, with a
-    second of digital silence between tracks every 200 s"""
-    rng = random.Random(seed)
-    return [-100.0 if i % 200 == 199 else -40 + rng.uniform(-8, 8) for i in range(seconds)]
+def music(seconds: int) -> list[Row]:
+    """A made-up playlist: -40 dB give or take, peaks ~13 dB over the RMS,
+    a second of digital silence between tracks every 200 s"""
+    rng = random.Random(1)
+    return [None if i % 200 == 199 else (-40 + rng.uniform(-8, 8), 13 + rng.uniform(-4, 4))
+            for i in range(seconds)]
 
 
-def level_log(directory: Path, name: str, levels: list[float], start: datetime = T0,
-              silent_lead: int = 0) -> Path:
-    rows = [f"{(start + timedelta(seconds=i)).isoformat()},{i},-80.00,-70.00,-80.00,-70.00"
-            for i in range(silent_lead)]
-    for i, db in enumerate(levels, silent_lead):
-        v = "" if db <= -100 else f"{db:.2f}"
-        rows.append(f"{(start + timedelta(seconds=i)).isoformat()},{i},{v},,{v},")
+def tone(db: float) -> list[Row]:
+    """The level tone: a partial first second, 10 s at DB, 10 s 12 dB lower"""
+    return [(db - 4, 6.0)] + [(db, 3.1)] * 9 + [(db - 6, 5.0)] + [(db - 12, 3.1)] * 9
+
+
+def silence(seconds: int) -> list[Row]:
+    return [(-80.0, 10.0)] * seconds
+
+
+def level_log(directory: Path, name: str, rows: list[Row]) -> Path:
+    """A level log from T0; the right channel 0.2 dB under the left"""
+    lines = []
+    for i, r in enumerate(rows):
+        cols = ",,," if r is None else \
+            f"{r[0]:.2f},{r[0] + r[1]:.2f},{r[0] - 0.2:.2f},{r[0] - 0.2 + r[1]:.2f}"
+        lines.append(f"{(T0 + timedelta(seconds=i)).isoformat()},{i},{cols}")
     p = directory / name
-    p.write_text("\n".join(rows) + "\n")
+    p.write_text("\n".join(lines) + "\n")
     return p
 
 
-class TestLevelMatch(unittest.TestCase):
-    def test_level_match(self) -> None:
-        tune = music(2000)
+class TestLevelTone(unittest.TestCase):
+    def test_tones(self) -> None:
         with tempfile.TemporaryDirectory() as d:
-            ref = level_log(Path(d), "ref.csv", tune)
-            # the run starts 40 s later in the log and 25 s further into the playlist
-            same = level_log(Path(d), "same.csv", [x + 0.3 for x in tune[25:]], silent_lead=40)
-            low = level_log(Path(d), "low.csv", [x - 10 for x in tune], silent_lead=40)
-            other = level_log(Path(d), "other.csv", music(2000, seed=2), silent_lead=40)
-            quiet = level_log(Path(d), "quiet.csv", [x - 30 for x in tune])
-            t0 = T0 + timedelta(seconds=40)
-            m = bench.level_match(same, t0, ref, T0)
-            assert m is not None and m.ok() and m.lag == 25 and m.corr > 0.99, m
-            assert abs(m.diff[0] - 0.3) < 0.01 and abs(m.diff[1] - 0.3) < 0.01, m
-            m = bench.level_match(low, t0, ref, T0)
-            assert m is not None and not m.ok() and abs(m.diff[0] + 10) < 0.01, m
-            assert "-10.0 dB" in str(m), m
-            m = bench.level_match(other, t0, ref, T0)
-            assert m is not None and not m.ok() and "not the reference's" in str(m), m
-            m = bench.level_match(quiet, T0, ref, T0)
-            assert m is not None and not m.ok() and "far quieter" in str(m), m
-            assert bench.level_match(same, T0 + timedelta(seconds=1500), ref, T0) is None
-            assert bench.first_sound(low, T0) == t0
-
-    def test_reference_gap(self) -> None:
-        """A reference silent for its first 90 s (a cable re-seated) still
-        compares over the seconds where both play"""
-        tune = music(2000)
-        with tempfile.TemporaryDirectory() as d:
-            ref = level_log(Path(d), "ref.csv", [-80.0] * 90 + tune[90:])
-            run = level_log(Path(d), "run.csv", tune)
-            m = bench.level_match(run, T0, ref, T0)
-            assert m is not None and m.ok() and m.lag == 0 and m.both < 600, m
+            log = level_log(Path(d), "run.csv", silence(40) + tone(-36) + music(600)
+                            + tone(-46) + music(300))
+            found = bench.tones(log, T0)
+            assert [t.at for t in found] == [T0 + timedelta(seconds=41),
+                                            T0 + timedelta(seconds=661)], found
+            assert [round(v, 1) for t in found for v in t.db] == [-36, -36.2, -46, -46.2]
+            assert bench.tones(log, T0 + timedelta(seconds=70)) == [found[1]]
+            assert bench.first_sound(log, T0) == T0 + timedelta(seconds=40)
 
     def test_watch(self) -> None:
-        tune = music(800)
         with tempfile.TemporaryDirectory() as d:
-            ref = level_log(Path(d), "ref.csv", tune)
             out: list[str] = []
-            run = level_log(Path(d), "run.csv", tune + [-80.0] * 400, silent_lead=40)
-            rc = bench.watch(run, T0, ref=(ref, T0), echo=out.append, poll=0)
-            assert rc == 0 and out[0].startswith("t0 ") and "+0.0 dB" in out[1], out
+
+            def watch(rows: list[Row]) -> int:
+                out.clear()
+                log = level_log(Path(d), "run.csv", rows)
+                return bench.watch(log, T0, tone_db=-36.0, echo=out.append, poll=0)
+
+            assert watch(silence(40) + tone(-36.3) + music(800) + silence(400)) == 0, out
+            assert out[0].startswith("t0 ") and "L -36.3 R -36.5 dBFS, want -36.0" in out[1]
             assert "run ended" in out[2], out
-            out.clear()
-            low = level_log(Path(d), "low.csv", [x - 10 for x in tune] + [-80.0] * 400)
-            assert bench.watch(low, T0, ref=(ref, T0), echo=out.append, poll=0) == 3, out
-            rc, text = arb(Workspace(Path(d)), "bench", "match", str(low), T0.isoformat(),
-                           str(ref), T0.isoformat())
-            assert rc == 3 and "-10.0 dB" in text, text
+            assert watch(silence(40) + tone(-46) + music(800)) == 3, out
+            assert "L -46.0" in out[-1], out
+            assert watch(silence(40) + music(800)) == 3 and "no level tone" in out[-1], out
+            # a volume change after the start shows at the next play
+            assert watch(tone(-36) + music(600) + tone(-38) + music(100)) == 3, out
+            assert len(out) == 3 and "L -38.0" in out[-1], out
+            rc, text = arb(Workspace(Path(d)), "bench", "watch", str(Path(d) / "run.csv"),
+                           "--tone", "-36", "--t0", T0.isoformat())
+            assert rc == 3 and "L -38.0" in text, text
 
     @unittest.skipUnless(TS17_SA1.exists() and TS17_RA1.exists(),
                          "the TS17 S-A 1 and R-A 1 level logs are not in this checkout")
-    def test_ts17_ra1(self) -> None:
-        """docs/ts17-battery.md: R-A 1 played ~10 dB under S-A 1 (its volume
-        stayed at -21); S-A 1's Line In was silent until 19:19:26"""
-        ra1 = datetime(2026, 11, 13, 3, 44, 39, tzinfo=UTC)
-        sa1 = datetime(2026, 11, 11, 19, 17, tzinfo=UTC)
-        m = bench.level_match(TS17_RA1, ra1, TS17_SA1, sa1)
-        assert m is not None and not m.ok() and -10.5 < m.diff[0] < -9.5, m
-        later = bench.level_match(TS17_RA1, ra1 + timedelta(seconds=3 * 8460), TS17_RA1, ra1)
-        assert later is not None and later.ok(), later         # its 4th pass against its 1st
+    def test_ts17_logs(self) -> None:
+        """docs/ts17-battery.md: stock's level setting played the tone at steps
+        31, 22 and 20 (-24.8, -34.0, -36.0 dBFS); a day of music has none"""
+        found = bench.tones(TS17_SA1, datetime(2026, 11, 11, 18, tzinfo=UTC))
+        assert sorted({round(t.db[0], 1) for t in found}) == [-36.0, -34.0, -24.8], found
+        assert not bench.tones(TS17_RA1, datetime(2026, 11, 13, 3, 44, 39, tzinfo=UTC))
 
 
 if __name__ == "__main__":
