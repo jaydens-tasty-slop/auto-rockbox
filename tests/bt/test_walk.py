@@ -139,7 +139,7 @@ class WalkTest(unittest.TestCase):
             def send(self, line: str) -> None:
                 if line == walk.LINK:
                     self.sent.append(line)
-                    self.out.append(f"err {line}")
+                    self.out.append("err bt")      # the shell names the first word
                 else:
                     super().send(line)
 
@@ -148,7 +148,7 @@ class WalkTest(unittest.TestCase):
         end, lines = self.walk(player, clock)
         assert end == "resumed"
         assert player.sent.count(walk.LINK) == 1
-        assert lines.count(f"walk: err {walk.LINK}") == 1
+        assert lines.count(f"walk: err bt ({walk.LINK})") == 1
 
 
 if __name__ == "__main__":

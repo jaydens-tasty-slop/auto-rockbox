@@ -94,11 +94,13 @@ class Walk:
                 pending = None
                 continue
             for line in lines:
-                if line == "ok" or line in (f"err {pending}", "err busy"):
-                    if line != "ok":
-                        self.log(f"walk: {line}")
-                    if line == f"err {LINK}":       # a player without the link stats
-                        del due[LINK]
+                # an error names the command's first word only
+                err = pending is not None and line in (f"err {pending.split()[0]}", "err busy")
+                if line == "ok" or err:
+                    if err:
+                        self.log(f"walk: {line} ({pending})")
+                    if err and pending == LINK and line != "err busy":
+                        due.pop(LINK, None)         # a player without the link stats
                     pending = None
                 else:
                     self._line(line)
