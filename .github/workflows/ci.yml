@@ -27,7 +27,8 @@ jobs:
       - name: Install LLVM
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang lld llvm
 
-      - run: uv sync --locked
+      # The extras (bumble, matplotlib) too: ty checks the modules that import them.
+      - run: uv sync --locked --all-extras
 
       - run: uv run ruff check src tests
 
