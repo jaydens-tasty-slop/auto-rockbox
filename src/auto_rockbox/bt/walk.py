@@ -1,10 +1,12 @@
-"""The headset walk's live log (`arb yp3 bt-walk`): the player stays on the
+"""The headset walk's live log (`arb TARGET bt-walk`): the player stays on the
 desk on USB streaming to headphones that a person carries around, and this PC
 holds the dev shell for the whole walk. Every line the player sends (a dev
 build mirrors each dev log line to its shell) goes into OUT/walk.txt with a
 wall-clock stamp, with the Bluetooth and audio state as it changes and the
-link stats polled every few seconds; the player's own 10 s media stats lines
-(bitpool, ACL buffer waits, clock restarts) come by themselves.
+link stats polled every few seconds (where the player has them: the YP3's
+own link controller does, a controller in ROM may not); the player's own
+10 s media stats lines (bitpool, ACL buffer waits, clock restarts) come by
+themselves.
 
 The walk ends when the headset is back after a drop and playback resumed
 (or did not within RESUME_S), or at the time limit. A USB unplug at the desk
@@ -95,6 +97,8 @@ class Walk:
                 if line == "ok" or line in (f"err {pending}", "err busy"):
                     if line != "ok":
                         self.log(f"walk: {line}")
+                    if line == f"err {LINK}":       # a player without the link stats
+                        del due[LINK]
                     pending = None
                 else:
                     self._line(line)

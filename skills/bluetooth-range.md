@@ -25,7 +25,9 @@ arb yp3 bt-walk build/bt/walk-0429 --minutes 15
 It holds the dev shell for the whole walk. It writes every new dev-log line
 and the BT and audio state changes, and polls the link stats: role, RSSI, TX
 power, packet types, and the player's stats lines with bitpool, ACL buffer
-waits and clock restarts. Every line is stamped with the wall clock. It ends
+waits and clock restarts. The link stats come from the target's own
+`bt ctrl link`; a player without one (a controller in ROM, like the
+TS17's) is asked once and walked without them. Every line is stamped with the wall clock. It ends
 when the headset is back after a drop and playback has resumed (or stayed
 paused for 20 s), or at the time limit.
 

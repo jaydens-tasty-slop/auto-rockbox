@@ -210,7 +210,7 @@ command("bt report", target=False, help="one timeline and a summary of a run dir
     arg("--to", dest="end", metavar="TIME", help="up to this local time"),
 ])(report_cmd)
 
-command("bt-walk", target={"yp3"}, needs={"shell"},
+command("bt-walk", needs={"shell"},
         help="the headset walk's live log over the dev shell", args=[
     _OUT,
     arg("--minutes", type=float, default=15.0, help="the walk's time limit (default 15)"),
