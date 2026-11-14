@@ -52,10 +52,10 @@ Each Rockbox run must show all of these:
 
 ### Torture
 
-- [ ] **At least 50 hours** of `arb TARGET torture` on the release candidate.
-      Use at least three seeds and include one continuous run of 12 h or
-      more. Up to half the hours may come from the previous candidate if the
-      diff passes the carry-over review above.
+- [ ] **At least 50 hours** of `arb TARGET torture` in total, across the
+      port's builds: hours spent finding and fixing bugs, not a clean pass
+      of one candidate. Use at least three seeds and include one continuous
+      run of 12 h or more.
 - [ ] Every scenario the port supports ran. That includes Bluetooth, FM,
       recording and USB if they ship, and the menu crawl's coverage reached
       every menu.
