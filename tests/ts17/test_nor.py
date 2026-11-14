@@ -46,6 +46,11 @@ def test_check_image() -> None:
         assert "refuse Rockbox's vectors" in msg, msg
     assert nor.check_image(_image(struct.pack("<II", 0x01024000, 0x101A6FFF)), "edge")
     assert "nothing after" in _raises(nor.check_image, _stub(), "stub only")
+    # Rockbox alone, for 0x15000 (a release package's image)
+    assert nor.check_app(APP_VECTORS + bytes(0x100), "app") == 0x10001141
+    assert "ELF" in _raises(nor.check_app, b"\x7fELF\x01\x01\x01\0", "elf")
+    assert "refuse" in _raises(nor.check_app, _image(), "a whole image")
+    assert "refuse" in _raises(nor.check_app, b"\xff" * 64, "erased")
 
 
 class _Session:
@@ -76,11 +81,32 @@ def test_rescue_sector_guard() -> None:
         assert "--rescue" in msg, msg
 
 
+def _write(stored: bytes, start: int, want: bytes, *, rescue: bool = False) -> int:
+    """write_cells with every sector reading as STORED (cells of WANT equal
+    to it are skipped, so a pass writes nothing)"""
+    s = cast(Session, _Session())
+    with mock.patch.object(nor, "_rom_read", lambda _s, _a, _n: rdm.encode(stored)):
+        return nor.write_cells(s, start, rdm.encode(want), rescue=rescue)
+
+
 def test_write_refuses_before_erasing() -> None:
     fake = _Session()
     s = cast(Session, fake)
     with mock.patch.object(nor, "_rom_read", lambda _s, _a, _n: rdm.encode(_stub())):
-        msg = _raises(lambda: nor.write_cells(s, nor.FW0_SYS, rdm.encode(_stub(2))))
+        msg = _raises(lambda: nor.write_cells(s, nor.FW0_SYS, rdm.encode(bytes(nor.SECTOR))))
     assert "--rescue" in msg and fake.calls == 1, (msg, fake.calls)   # setup only
     msg = _raises(lambda: nor.write_cells(s, 0x4000, bytes(nor.SECTOR)))
     assert "boot chain" in msg, msg
+
+
+def test_only_the_frozen_stub() -> None:
+    # a stub that is not the frozen one, even asked for and even unchanged
+    for stored in (_stub(), bytes(nor.SECTOR)):
+        msg = _raises(lambda s=stored: _write(s, nor.FW0_SYS, _stub(), rescue=True))
+        assert "frozen" in msg, msg
+
+
+def test_rockbox_alone_needs_a_stub() -> None:
+    stock = bytes(range(256)) * 16
+    assert "no rescue stub" in _raises(_write, stock, nor.APP, stock)
+    assert _write(_stub(), nor.APP, _stub()) == 0     # a stub stored: allowed

@@ -149,6 +149,7 @@ def test_rescue_stub_branches() -> None:
         raise Skip("no unicorn") from e
     flash = _flash()
     assert flash[8:12] == nor.RESCUE_MARK
+    assert nor.is_frozen_rescue(flash), "the build's stub is not the frozen one"
     nor.check_image(flash, "build")         # arb would accept the image
 
     def v(sp: int, reset: int) -> bytes:

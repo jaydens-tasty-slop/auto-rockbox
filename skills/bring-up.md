@@ -71,7 +71,14 @@ conclusions.**
     bytes and the writer skips its sector.
 
   The writer refuses to change that sector, or to put a stub there, unless
-  asked (`--rescue`). A flasher for users writes it on a new install only.
+  asked (`--rescue`). Once the stub passes on hardware, freeze it for good:
+  a bad stub on a player that has no other way back is a brick. Pin its
+  bytes by hash in the writer and the flasher, and fail the build if its
+  source assembles to anything else. Keep it out of release packages: they
+  start after it, with the package format bumped so older flashers refuse
+  them. The flasher carries its own copy of the stub and writes it only
+  where there is none, never asking the user. A user cannot judge "replace
+  the rescue stub?" and will say yes.
   Before the first flash, run the stub's bytes from a build through an
   emulator on every branch, with modelled registers and no RAM mapped
   (`tests/ts17/test_rescue_stub.py`, unicorn), and check that broken copies

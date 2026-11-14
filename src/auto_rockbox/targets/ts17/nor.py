@@ -17,6 +17,7 @@ it, or putting one there, takes `rescue`.
 
 from __future__ import annotations
 
+import hashlib
 import struct
 from collections.abc import Callable
 from typing import BinaryIO
@@ -33,6 +34,11 @@ BOOT_END = FW0_SYS              # mbrec A/B, the partition tables and fw0_rec en
 XIP_BASE = 0x10000000           # remap entry 0's virtual base, where fw0_sys runs
 RESCUE = FW0_SYS                # the rescue stub's sector, ahead of Rockbox
 RESCUE_MARK = b"RBRS"           # at +8 in the stub
+# The stub is frozen for good (the user, 2026-11-14: never to be touched
+# again): v2, its sector as the CPU reads it. rockslop carries the same
+# bytes, and ts17dev/build.sh fails a build whose stub differs.
+RESCUE_SHA256 = "aa13ea64f60a71227ae55318f91dac94d0f0e7220b6bf73f98b6067367c44f0f"
+APP = FW0_SYS + SECTOR          # Rockbox, after the stub
 APP_BASE = XIP_BASE + SECTOR    # Rockbox's vector table, after the stub
 RAM0_BASE, RAM0_SIZE = 0x01000000, 0x24000  # Rockbox's initial stack pointer is in here
 
@@ -122,17 +128,40 @@ def _rom_read(s: Session, addr: int, n: int) -> bytes:
 
 
 def has_rescue(plain: bytes) -> bool:
-    """PLAIN (an image as the CPU reads it) starts with the rescue stub"""
+    """PLAIN (an image as the CPU reads it) starts with a rescue stub"""
     return plain[8:12] == RESCUE_MARK
+
+
+def is_frozen_rescue(plain: bytes) -> bool:
+    """PLAIN's first sector is the frozen rescue stub"""
+    return hashlib.sha256(plain[:SECTOR]).hexdigest() == RESCUE_SHA256
+
+
+def _not_elf(plain: bytes, name: str) -> None:
+    if plain[:4] == b"\x7fELF":
+        raise Ts17Error(f"{name} is an ELF file: flash its `objcopy -O binary` image")
+
+
+def check_app(plain: bytes, name: str) -> int:
+    """Raises unless PLAIN, Rockbox for APP behind the stub, has vectors the
+    stub accepts (else it sends every boot to download mode, or powers off
+    on battery); returns its reset vector"""
+    _not_elf(plain, name)
+    if len(plain) < 8:
+        raise Ts17Error(f"{name}: no vector table")
+    sp, entry = struct.unpack_from("<II", plain)
+    if ((sp - RAM0_BASE - 1) & 0xFFFFFFFF >= RAM0_SIZE or not entry & 1
+            or (entry - APP_BASE) & 0xFFFFFFFF >= FW0_SYS_SIZE - SECTOR):
+        raise Ts17Error(f"{name}: the stub would refuse Rockbox's vectors "
+                        f"(SP {sp:08x}, reset {entry:08x})")
+    return entry
 
 
 def check_image(plain: bytes, name: str) -> int:
     """Raises unless PLAIN is an image the boot chain can start from
     fw0_sys; returns its reset vector. With the rescue stub, Rockbox's
-    vectors after it must pass the stub's own check (else the stub would
-    send every boot to download mode)."""
-    if plain[:4] == b"\x7fELF":
-        raise Ts17Error(f"{name} is an ELF file: flash its `objcopy -O binary` image")
+    vectors after it must pass the stub's own check."""
+    _not_elf(plain, name)
     (reset,) = struct.unpack_from("<I", plain, 4)
     if not has_rescue(plain):
         if not XIP_BASE <= reset - 1 < XIP_BASE + len(plain):
@@ -143,11 +172,7 @@ def check_image(plain: bytes, name: str) -> int:
         raise Ts17Error(f"{name}: the rescue stub's reset vector {reset:08x} is not in it")
     if len(plain) < SECTOR + 8:
         raise Ts17Error(f"{name}: nothing after the rescue stub")
-    sp, entry = struct.unpack_from("<II", plain, SECTOR)
-    if ((sp - RAM0_BASE - 1) & 0xFFFFFFFF >= RAM0_SIZE or not entry & 1
-            or (entry - APP_BASE) & 0xFFFFFFFF >= FW0_SYS_SIZE - SECTOR):
-        raise Ts17Error(f"{name}: the stub would refuse Rockbox's vectors "
-                        f"(SP {sp:08x}, reset {entry:08x})")
+    check_app(plain[SECTOR:], name)
     return reset
 
 
@@ -156,8 +181,16 @@ def _check_rescue(s: Session, want: bytes) -> None:
     stub is stored there or WANT holds one"""
     have = _rom_read(s, RESCUE, SECTOR)
     if have != want and (has_rescue(rdm.decode(have)) or has_rescue(rdm.decode(want))):
-        raise Ts17Error(f"this would change the rescue stub at {RESCUE:#x}: install or "
-                        "replace it on purpose with `nor program --rescue`")
+        raise Ts17Error(f"this would change the rescue stub at {RESCUE:#x}: install it "
+                        "where there is none with `nor program --rescue`")
+
+
+def _check_stub_behind(s: Session) -> None:
+    """Refuses Rockbox on its own unless the stub stored at RESCUE is there
+    to start it (stock's start would jump into what was just written)"""
+    if not has_rescue(rdm.decode(_rom_read(s, RESCUE, SECTOR))):
+        raise Ts17Error(f"no rescue stub at {RESCUE:#x} to start Rockbox: write a whole "
+                        "image there first (`nor program --rescue IMAGE 0x14000`)")
 
 
 def write_cells(s: Session, start: int, cells: bytes, *, boot: bool = False,
@@ -165,14 +198,26 @@ def write_cells(s: Session, start: int, cells: bytes, *, boot: bool = False,
     """Makes flash at START match CELLS: per sector, read what is stored and
     if it differs erase, program and verify. Identical sectors are left
     alone to spare wear. Returns how many were rewritten. The boot chain
-    takes BOOT, a change to the rescue stub RESCUE."""
+    takes BOOT, installing the stub where there is none (or removing it,
+    stock's own start going back) RESCUE. A stub is only ever the frozen
+    one, and Rockbox written on its own needs one stored ahead of it."""
     if start % SECTOR or len(cells) % SECTOR or start + len(cells) > FLASH_SIZE:
         raise Ts17Error("a flash write must be whole 4 KiB sectors inside the flash")
     if start < BOOT_END and not boot:
         raise Ts17Error(f"the range touches the boot chain (below {BOOT_END:#x})")
+    stub = None
+    if start <= RESCUE < start + len(cells):
+        stub = cells[RESCUE - start:RESCUE - start + SECTOR]
+        plain = rdm.decode(stub)
+        if has_rescue(plain) and not is_frozen_rescue(plain):
+            raise Ts17Error("this image's rescue stub is not the frozen one (sha256 "
+                            f"{RESCUE_SHA256[:12]}...): the stub never changes, so its "
+                            "rescue-lark.S must not either")
     s.values(setup(raw=True))
-    if start <= RESCUE < start + len(cells) and not rescue:
-        _check_rescue(s, cells[RESCUE - start:RESCUE - start + SECTOR])
+    if stub is not None and not rescue:
+        _check_rescue(s, stub)
+    if RESCUE < start < FW0_SYS + FW0_SYS_SIZE:
+        _check_stub_behind(s)
     changed = 0
     for addr in range(start, start + len(cells), SECTOR):
         want = cells[addr - start:addr - start + SECTOR]

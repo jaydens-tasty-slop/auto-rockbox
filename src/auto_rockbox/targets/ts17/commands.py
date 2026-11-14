@@ -114,9 +114,12 @@ def nor_program(ctx: Context, args: Namespace) -> None:
     """A plain file at START, encoded for XIP reads (the randomizer on); the
     rest of its last sector is left erased. Rewrites only the 4 KiB sectors
     that differ, and verifies each. At fw0_sys the file must be an image the
-    boot chain can start (nor.check_image)."""
+    boot chain can start (nor.check_image); at 0x15000, Rockbox alone (a
+    release package's image) that the stored stub accepts (nor.check_app)."""
     data = args.file.read_bytes()
-    if data[:4] == b"\x7fELF" or args.start == nor.FW0_SYS:
+    if args.start == nor.APP:
+        nor.check_app(data, args.file.name)
+    elif data[:4] == b"\x7fELF" or args.start == nor.FW0_SYS:
         nor.check_image(data, args.file.name)
     _write(ctx, args.start, nor.pad(rdm.encode(nor.pad(data, rdm.XIP_RUN)), nor.SECTOR),
            args.boot, args.rescue)
@@ -127,7 +130,8 @@ WINDOW_ARGS = [arg("--raw", action="store_true", help="the stored cells (randomi
 BOOT_ARG = arg("--boot", action="store_true",
                help="allow the boot chain below 0x14000 (mbrec, partition tables, fw0_rec)")
 RESCUE_ARG = arg("--rescue", action="store_true",
-                 help="allow installing or replacing the rescue stub at 0x14000")
+                 help="allow installing the rescue stub at 0x14000 where there is none, "
+                      "or removing it (stock's start); only the frozen stub is written")
 TS17 = {"ts17"}
 
 group("nor", help="the NOR flash: ident, map, dump, restore, program")
