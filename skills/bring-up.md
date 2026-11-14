@@ -63,7 +63,8 @@ conclusions.**
     it, so any hang or fault after those stores lands in recovery;
   - checks the key rule, with USB power required;
   - checks the firmware's vectors (SP in RAM, reset vector inside the image)
-    and goes to recovery if they are wrong;
+    and goes to recovery if they are wrong, but only with USB power in. On
+    battery it powers off instead;
   - jumps with the recovery word still set, uses no stack, and leaves the
     caller's registers alone;
   - depends only on its own constants, so every build carries identical
@@ -79,7 +80,19 @@ conclusions.**
   comes back. Only then try a cold boot. Prefer a key that is easy to reach
   with cables in: the TS17 accepts the pad's Down as well as on/off, and
   since plugging USB in powers it on, Down held while plugging in is
-  enough.
+  enough. Test every branch as a launch before the first cold boot: for a
+  key, read it from the host and launch while it is held; for bad vectors,
+  blank the firmware's first sector with the writer and put it back after.
+- **Recovery mode only with USB power in.** A boot ROM's download mode
+  often has no timeout, and the screen stays dark (the TS17 held it for 9 h
+  and stays in it when unplugged). On battery it looks off while it drains
+  the cell, which has no cutoff below the firmware's own. So keep the
+  recovery word set only while USB power is in: on battery a hang or crash
+  reboots the firmware instead, which the user can see, and the firmware's
+  low-battery power-off stays in charge. A dev build's timed return waits
+  for USB power too. To tell "powered off" from "recovery mode" with nothing
+  on screen, use a clock that a reset keeps and a power-off stops (TS17:
+  RTC_0's run bit).
 - **Know your charger.** Boot ROM USB modes often leave the charger on with
   nobody supervising it. A player left in that mode for hours goes far past
   a normal full charge. Find the charge enable bit early, and make the host
