@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from auto_rockbox.elf import Elf
-from auto_rockbox.targets.ts17 import nor, power
+from auto_rockbox.targets.ts17 import nor, power, rdm
 
 from . import Skip
 
@@ -23,6 +23,8 @@ KEY, KEY_ONOFF = 0x40004108, 1 << 17         # PMU: on/off held
 ADC_CTL, ADC_LADDER = 0x40004200, 1 << 5 | 1 << 23   # the ladder channel, run
 ADC_KEYS = 0x40004224                       # the ladder sample
 IDLE, DOWN = 0x3190, 0x211C                 # measured ladder steps
+PMU_OFF, PMU_WAKE = 0x4000410C, 0x40004110  # power-off: wake sources, then any write
+WAKE_ON_BATTERY = 0x115                     # power-ts17.c's on battery: base | DC5V
 SYST_CSR, SYST_RVR, SYST_CVR = 0xE000E010, 0xE000E014, 0xE000E018
 WDT_ARM, WDT_NOW = 0x1D, 0x1E               # ~11 s with a feed; reset now
 HOLD_PERIODS = 150                          # 150 checks, 10 ms apart, after a first wait
@@ -49,21 +51,26 @@ Keys = Callable[[int], tuple[bool, int]]   # periods passed -> (on/off held, lad
 
 
 def _run(uc_mod: Any, flash: bytes, usb: bool, keys: Keys,
-         app: bytes | None = None) -> tuple[str, int]:
-    """Where the stub went ("app", "adfu") and after how many 10 ms periods"""
+         app: bytes | None = None, *, held_reads: int = 0) -> tuple[str, int]:
+    """Where the stub went ("app", "adfu", "off") and after how many 10 ms
+    periods. HELD_READS: on/off reads held for that many reads, whatever
+    KEYS says (no periods pass on battery)."""
     arm = importlib.import_module("unicorn.arm_const")
     uc = uc_mod.Uc(uc_mod.UC_ARCH_ARM, uc_mod.UC_MODE_THUMB | uc_mod.UC_MODE_MCLASS)
     mem = bytearray(flash[:nor.SECTOR] + (app or flash[nor.SECTOR:])).ljust(0x200000, b"\0")
     uc.mem_map(nor.XIP_BASE, len(mem))
     uc.mem_write(nor.XIP_BASE, bytes(mem))
     st: dict[str, Any] = {"periods": 0, "csr": 0, "reads": 0, "writes": [], "out": None,
-                          "adc": 0x800000}
+                          "adc": 0x800000, "key_reads": 0, "wake": None}
 
     def pmu_read(_uc: Any, off: int, _size: int, _d: Any) -> int:
         addr = 0x40004000 + off
         if addr == DET:
             return DET_DC5V if usb else 0
         if addr == KEY:
+            st["key_reads"] += 1
+            if st["key_reads"] <= held_reads:
+                return KEY_ONOFF
             return KEY_ONOFF if keys(st["periods"])[0] else 0
         if addr == ADC_CTL:
             return st["adc"]
@@ -74,9 +81,17 @@ def _run(uc_mod: Any, flash: bytes, usb: bool, keys: Keys,
         raise _Stop(f"PMU read {addr:08x}")
 
     def pmu_write(_uc: Any, off: int, _size: int, v: int, _d: Any) -> None:
-        if 0x40004000 + off != ADC_CTL or v != st["adc"] | ADC_LADDER:
-            raise _Stop(f"PMU write {0x40004000 + off:08x}={v:x}")
-        st["adc"] = v
+        addr = 0x40004000 + off
+        if addr == ADC_CTL and v == st["adc"] | ADC_LADDER:
+            st["adc"] = v
+        elif addr == PMU_WAKE and not usb and not keys(st["periods"])[0] \
+                and st["key_reads"] > held_reads:
+            st["wake"] = v
+        elif addr == PMU_OFF and st["wake"] == WAKE_ON_BATTERY:
+            st["out"] = "off"
+            uc.emu_stop()
+        else:
+            raise _Stop(f"PMU write {addr:08x}={v:x}")
 
     def sys_write(_uc: Any, off: int, _size: int, v: int, _d: Any) -> None:
         addr = 0x4000C000 + off
@@ -165,20 +180,29 @@ def test_rescue_stub_branches() -> None:
         ("ladder 0 (Prev, or no sample)", True, keys(ladder=0), None, ("app", 1)),
         ("Down with high bits set", True, keys(ladder=0xFFFFC000 | DOWN), None,
          ("adfu", HOLD_PERIODS)),
-        ("scrambled erased flash", False, keys(), bytes.fromhex("9e3779b97f4a7c15"),
-         ("adfu", 0)),
-        ("an ELF file", False, keys(), b"\x7fELF\x01\x01\x01\0", ("adfu", 0)),
-        ("zeros", False, keys(), bytes(8), ("adfu", 0)),
-        ("ones", False, keys(), b"\xff" * 8, ("adfu", 0)),
-        ("old layout", False, keys(), v(0x010087F0, 0x10000141), ("adfu", 0)),
-        ("no Thumb bit", False, keys(), v(0x010087F0, 0x10001140), ("adfu", 0)),
         ("reset at the last byte", False, keys(), v(0x010087F0, 0x101A6FFF), ("app", 0)),
-        ("reset past the image", False, keys(), v(0x010087F0, 0x101A7001), ("adfu", 0)),
-        ("SP at RAM0's base", False, keys(), v(0x01000000, 0x10001141), ("adfu", 0)),
         ("SP at RAM0's top", False, keys(), v(0x01024000, 0x10001141), ("app", 0)),
-        ("SP past RAM0", False, keys(), v(0x01024004, 0x10001141), ("adfu", 0)),
-        ("SP in PSRAM", False, keys(), v(0x18001000, 0x10001141), ("adfu", 0)),
     ]
     for name, usb, k, app, want in cases:
         got = _run(uc_mod, flash, usb, k, app)
         assert got == want, f"{name}: {got}, want {want}"
+
+    # No image to run: download mode with USB power, else power-off (after
+    # the on/off key is let go, as a held key would wake it again)
+    bad = {
+        "erased flash, as read through the randomizer": rdm.decode(b"\xff" * rdm.XIP_RUN)[:8],
+        "an ELF file": b"\x7fELF\x01\x01\x01\0",
+        "zeros": bytes(8),
+        "ones": b"\xff" * 8,
+        "old layout": v(0x010087F0, 0x10000141),
+        "no Thumb bit": v(0x010087F0, 0x10001140),
+        "reset past the image": v(0x010087F0, 0x101A7001),
+        "SP at RAM0's base": v(0x01000000, 0x10001141),
+        "SP past RAM0": v(0x01024004, 0x10001141),
+        "SP in PSRAM": v(0x18001000, 0x10001141),
+    }
+    for name, app in bad.items():
+        assert _run(uc_mod, flash, True, keys(), app) == ("adfu", 1), f"{name}, USB"
+        assert _run(uc_mod, flash, False, keys(), app) == ("off", 0), f"{name}, battery"
+    assert _run(uc_mod, flash, False, keys(), bytes(8), held_reads=1000) == ("off", 0), \
+        "on/off still held from the power-on"
