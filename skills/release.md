@@ -75,11 +75,15 @@ Each Rockbox run must show all of these:
       (bring-up.md, Ground rules): the power-on key rule with USB in, and the
       debug menu's reboot into recovery mode. A normal power-on press still
       boots, and the rule's hold ends well before the PMU's long-press reset.
-- [ ] **With a rescue stub** (bring-up.md): the candidate carries the same
-      stub bytes as the installed one, so an upgrade leaves the stub's
-      sector alone. The installer writes the stub on a new install only.
-      Recovery works with the firmware sector erased and with an ELF file
-      flashed in its place.
+- [ ] **With a rescue stub** (bring-up.md, "freeze it for good"): the
+      candidate's stub hashes to the frozen pin (the build fails
+      otherwise). The release package holds the firmware alone, after the
+      stub, in the bumped package format. The flasher writes its own pinned
+      stub on a new install only, stub first, and never asks about it. An
+      upgrade never writes the stub's sector. With USB in, recovery works
+      with the firmware's first sector erased and with an ELF file in its
+      place; on battery the same images power off. An install interrupted
+      after the stub comes back in recovery mode and retries.
 - [ ] **The way back to stock works from the release build**: follow the
       published recovery steps literally on a player running the candidate.
       Stock must boot, play and keep its settings or calibration.
@@ -93,7 +97,10 @@ Each Rockbox run must show all of these:
 - [ ] A hang or crash in the release build ends in a reboot or power-off,
       not a dead player that needs the battery to run flat (recovery
       watchdog policy for release builds, tested with `hang`/`crash` from
-      the dev build of the same commit).
+      the dev build of the same commit). Recovery mode only with USB power
+      in (bring-up.md): on battery, a crash must reboot, never leave the
+      player dark in a recovery mode with no timeout. Test it with the
+      crash armed and USB pulled before it fires.
 
 ### Power and charging
 

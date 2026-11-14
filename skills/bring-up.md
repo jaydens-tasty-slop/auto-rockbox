@@ -68,28 +68,55 @@ conclusions.**
   - jumps with the recovery word still set, uses no stack, and leaves the
     caller's registers alone;
   - depends only on its own constants, so every build carries identical
-    bytes and the writer skips its sector.
+    bytes, which can be pinned by hash.
 
-  The writer refuses to change that sector, or to put a stub there, unless
-  asked (`--rescue`). Once the stub passes on hardware, freeze it for good:
-  a bad stub on a player that has no other way back is a brick. Pin its
-  bytes by hash in the writer and the flasher, and fail the build if its
-  source assembles to anything else. Keep it out of release packages: they
-  start after it, with the package format bumped so older flashers refuse
-  them. The flasher carries its own copy of the stub and writes it only
-  where there is none, never asking the user. A user cannot judge "replace
-  the rescue stub?" and will say yes.
-  Before the first flash, run the stub's bytes from a build through an
-  emulator on every branch, with modelled registers and no RAM mapped
-  (`tests/ts17/test_rescue_stub.py`, unicorn), and check that broken copies
-  fail the test. Then run it first as a launch from recovery mode, where the
-  hook has already set the recovery word, so even a stub that never starts
-  comes back. Only then try a cold boot. Prefer a key that is easy to reach
-  with cables in: the TS17 accepts the pad's Down as well as on/off, and
-  since plugging USB in powers it on, Down held while plugging in is
-  enough. Test every branch as a launch before the first cold boot: for a
-  key, read it from the host and launch while it is held; for bad vectors,
-  blank the firmware's first sector with the writer and put it back after.
+  Prefer a key that is easy to reach with cables in. The TS17 accepts the
+  pad's Down as well as on/off, and since plugging USB in powers it on,
+  Down held while plugging in is enough.
+
+  **Prove it before it runs from a cold boot**, in this order:
+  1. Emulate the stub's bytes from a build on every branch, with modelled
+     registers and no RAM mapped (`tests/ts17/test_rescue_stub.py`,
+     unicorn). Check that broken copies fail the test.
+  2. Write it, but don't reset. Writing runs nothing, and recovery mode
+     keeps the player until you launch. Until the launches pass, ask the
+     user not to power-cycle it.
+  3. Launch it from recovery mode, once per branch. Its safety net must be
+     real: confirm which component keeps the recovery word set and which
+     watchdog fires if the launch dies (TS17: the hook re-arms the word on
+     every call, and the ROM's watchdog fires ~11 s after its USB loop
+     stops). Don't claim the tools set it without reading the launch code.
+     For a key, read it from the host and launch the moment it is held. For
+     bad vectors, blank the firmware's first sector with the writer, then
+     put it back. A recovery branch returns in about 1-2 s; a wedge takes
+     the watchdog's ~11 s.
+  4. Cold boot through the boot chain with no key, then the hand gestures
+     (key held while plugging in; the PMU's long-press reset out of recovery
+     mode on battery).
+  5. The battery branch. A dark screen can't tell "off" from "recovery
+     mode", so use a clock that a reset keeps and a power-off stops (TS17:
+     RTC_0's run bit).
+
+  **Then freeze it for good.** A bad stub on a player that has no other way
+  back is a brick, and a stub that is never rewritten can't go bad:
+  - Pin its bytes by hash in the dev writer and the user flasher, and fail
+    the build if its source assembles to anything else (TS17: `nor.py`
+    `RESCUE_SHA256`, `ts17dev/build.sh`).
+  - Keep it out of release packages: they hold the firmware alone, after
+    it. Bump the package format so older flashers refuse them; otherwise
+    an old flasher writes the firmware where the stub belongs and leaves
+    stock's start jumping into it.
+  - The user flasher carries its own copy and writes it only where there is
+    none, stub first and verified, then the firmware. A cable pulled after
+    the stub then comes back in recovery mode, and the only window that
+    can't be recovered is the stub's own sector, once per player. Any stub
+    already there stays, even one with another hash.
+  - No override and no question. A user can't judge "replace the rescue
+    stub?" and will say yes. Changing it would take a new flasher release
+    with its own migration logic, decided by the owner.
+  - The dev writer follows the same rules: `--rescue` only installs the
+    pinned stub where there is none, or removes it to go back to stock. It
+    refuses the firmware alone unless a stub is stored ahead of it.
 - **Recovery mode only with USB power in.** A boot ROM's download mode
   often has no timeout, and the screen stays dark (the TS17 held it for 9 h
   and stays in it when unplugged). On battery it looks off while it drains
@@ -97,9 +124,8 @@ conclusions.**
   recovery word set only while USB power is in: on battery a hang or crash
   reboots the firmware instead, which the user can see, and the firmware's
   low-battery power-off stays in charge. A dev build's timed return waits
-  for USB power too. To tell "powered off" from "recovery mode" with nothing
-  on screen, use a clock that a reset keeps and a power-off stops (TS17:
-  RTC_0's run bit).
+  for USB power too. Test it with a crash armed and USB pulled before it
+  fires: the firmware must come back by itself.
 - **Know your charger.** Boot ROM USB modes often leave the charger on with
   nobody supervising it. A player left in that mode for hours goes far past
   a normal full charge. Find the charge enable bit early, and make the host
@@ -108,6 +134,13 @@ conclusions.**
   tools against the same player.
 - **Before every hardware step, write down what it tests and why.** A step
   without a question wastes a reflash and teaches nothing.
+- **When the user's hands are the test, watch with something that tells you
+  at once.** A background log that only reports when it exits isn't
+  watching. The user then retries, wondering why nothing happened. Run a
+  command that exits on the expected event (a key read from the host, the
+  device leaving or joining the bus), and arm it before giving the steps.
+  Give the steps in the order the player's state allows: you can't start
+  from "off" while it sits in recovery mode.
 
 ## Phase 0: identify
 
