@@ -169,7 +169,7 @@ Driver order, each to "works, measured, documented" before the next:
 | Order | Driver | Done when |
 |---|---|---|
 | 1 | LCD | logo and menus on camera match the framebuffer, backlight PWM |
-| 2 | Buttons | every key, chords and holds through the key script and by hand |
+| 2 | Buttons | every key, chord and hold through the key script and by hand. The key script injects past the hardware, so only a hand press proves a chord: keys sharing an ADC ladder read one at a time, and the keymap must not chord them |
 | 3 | Storage | card read/write with DMA, FAT checked by `fsck` after stress |
 | 4 | Audio out | tone on Line In at the right frequency and channel, no dropouts in an hour |
 | 5 | Power | battery reading calibrated against a meter, charge control, real power-off, wake |
