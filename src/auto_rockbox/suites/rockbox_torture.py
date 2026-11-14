@@ -67,6 +67,7 @@ through a bluetoothctl agent.
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
 import subprocess
@@ -201,6 +202,12 @@ LINEIN_DB = 2.0                 # ...and against earlier steps
 LINEIN_ONSET_S = 6              # the tone is heard within this of the play command
 FOLDER_BUDGET_S = 3             # next/previous folder plays within this
 FOLDER_WAIT_S = 20              # ...and is waited for this long
+RTC_EVERY_S = 600               # the player's clock read every ~10 min
+RTC_SLACK_S = 2.0               # `date`'s whole seconds and the shell's round trip
+RTC_PPM = 100                   # drift allowed, ~8.6 s a day
+RTC_JUMP_S = 30                 # a change this big between readings was a clock set
+RTC_SET_S = 60                  # the start sets a clock this far from this PC's
+DATE_LINE = re.compile(r"(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d) wday")
 # Keys (`keys`): + held 1 s, * held 1.2 s from the live key state; UL = Home
 MONKEY_KEYS = ["U", "D", "L", "R", "S", "U+", "D+", "L+", "R+", "S+", "100", "400"]
 MONKEY_WEIGHTS = [5, 5, 5, 5, 4, 1, 1, 1, 1, 1, 2, 2]
@@ -455,6 +462,44 @@ class DecodeHashes:
         return (f"Decode hashes: {sum(self.plays.values())} plays of {len(self.plays)} "
                 f"(file, frames), {sum(n > 1 for n in self.plays.values())} played more "
                 f"than once, {self.diffs} differences")
+
+
+class ClockWatch:
+    """The player's clock against this PC's: each reading's offset (player
+    minus PC, s) may drift RTC_PPM from the first. A jump between readings
+    is a clock set (crawl's Time & Date) and is judged from afresh, unless a
+    boot came in between: a reset must not move the clock."""
+
+    def __init__(self) -> None:
+        self.base: tuple[float, float] | None = None    # (time, offset) judged from
+        self.last: tuple[float, float] | None = None
+        self.sets = 0
+
+    def due(self, now: float) -> bool:
+        return self.last is None or now - self.last[0] >= RTC_EVERY_S
+
+    def add(self, now: float, offset: float, booted: bool) -> str | None:
+        last, self.last = self.last, (now, offset)
+        if self.base is None or last is None:
+            self.base = (now, offset)
+            return None
+        t0, base = self.base
+        drift = offset - base
+        if abs(drift) <= RTC_SLACK_S + RTC_PPM * 1e-6 * (now - t0):
+            return None
+        self.base = (now, offset)
+        if abs(offset - last[1]) > RTC_JUMP_S and not booted:
+            self.sets += 1
+            return None
+        how = "across a boot" if booted else f"{drift / (now - t0) * 1e6:+.0f} ppm"
+        return f"clock off by {drift:+.0f} s after {(now - t0) / 3600:.1f} h ({how})"
+
+    def line(self) -> str | None:
+        if self.base is None or self.last is None:
+            return None
+        (t0, base), (t1, off) = self.base, self.last
+        sets = f", {self.sets} clock sets" if self.sets else ""
+        return f"Clock against this PC: {off - base:+.0f} s over {(t1 - t0) / 3600:.1f} h{sets}"
 
 
 class VideoStats:
@@ -734,6 +779,8 @@ class RockboxTorture(TortureSuite):
         self.msgs_lost = 0
         self.decodes = DecodeHashes()
         self.videos = VideoStats()
+        self.clock = ClockWatch()
+        self.booted = False             # a boot since the last clock reading
         self.linein_db: list[float] = []
         self.battery: list[tuple[float, int, int, bool]] = []
         self.tree: list[MenuNode] | None = None
@@ -816,7 +863,7 @@ class RockboxTorture(TortureSuite):
         print(f"settings files in {self.card_dir} on the card")
 
     def prepare(self) -> None:
-        self.msg_next, self.tree = 1, None
+        self.msg_next, self.tree, self.booted = 1, None, True
         self.sh("dryoff")               # a menu power-off returns to the host
         self.sh("repeat 0")
         self.sh(f"vol {VOLUME_DB}")
@@ -862,9 +909,38 @@ class RockboxTorture(TortureSuite):
             raise TortureError(f'"{errs[0].strip()}": the card\'s codecs are not from this '
                                "build; install its modules (docs/testing.md)")
         self.read_msgs()        # those from before the run are not its own
+        off = self.clock_offset()
+        if off is not None and abs(off) > RTC_SET_S:
+            self.sh("date " + time.strftime("%Y-%m-%d %H:%M:%S"))   # this PC's local time
 
     def after_step(self) -> list[str]:
-        return self.take_messages() + self.charge_check() + self.sink_check()
+        return (self.take_messages() + self.charge_check() + self.sink_check()
+                + self.clock_check())
+
+    def clock_offset(self) -> float | None:
+        """The player's clock (`date`) less this PC's local time, s; None
+        without a clock"""
+        t0 = time.time()
+        lines = self.sh("date")
+        t1 = time.time()
+        m = next((m for x in lines if (m := DATE_LINE.search(x))), None)
+        if m is None:
+            return None
+        player = calendar.timegm((*(int(g) for g in m.groups()), 0, 0, 0))
+        local = (t0 + t1) / 2
+        return player - (local + time.localtime(local).tm_gmtoff)
+
+    def clock_check(self) -> list[str]:
+        """A clock reading every ~10 min, and the first after each boot"""
+        now = time.time()
+        if not (self.booted or self.clock.due(now)):
+            return []
+        off = self.clock_offset()
+        if off is None:
+            return []
+        booted, self.booted = self.booted, False
+        problem = self.clock.add(now, off, booted)
+        return [problem] if problem else []
 
     def sink_check(self) -> list[str]:
         """The output on Bluetooth with no device linked: a scenario forced
@@ -892,6 +968,8 @@ class RockboxTorture(TortureSuite):
         lines = ["", self.decodes.line()]
         if video := self.videos.line():
             lines.append(video)
+        if clock := self.clock.line():
+            lines.append(clock)
         if self.linein_db:
             lines.append(f"Line In tone: {min(self.linein_db):.1f}..{max(self.linein_db):.1f} "
                          f"dBFS over {len(self.linein_db)} steps")

@@ -183,6 +183,19 @@ def test_message_judging() -> None:
     assert rt.message_problems([("decode", "deadbeef 1 /failed.mp3"), ("lost", "2")]) == []
 
 
+def test_clock_watch() -> None:
+    c = rt.ClockWatch()
+    assert c.due(0) and c.add(0, 5.0, booted=True) is None         # the first: the base
+    assert not c.due(100)
+    assert c.add(3600, 5.3, booted=False) is None                  # 0.3 s in 1 h: in budget
+    assert c.add(7200, 9.0, booted=False) == "clock off by +4 s after 2.0 h (+556 ppm)"
+    assert c.add(7800, 9.0 + 3600, booted=False) is None           # a clock set
+    assert c.sets == 1
+    assert c.add(8400, 3609.0, booted=True) is None                # a boot that kept it
+    assert c.add(9000, 3570.0, booted=True) == "clock off by -39 s after 0.3 h (across a boot)"
+    assert c.line() == "Clock against this PC: +0 s over 0.0 h, 1 clock sets"
+
+
 def test_decode_hashes_and_video() -> None:
     d = rt.DecodeHashes()
     assert d.add("ea613a3d 161280 /a b.mp3") is None
