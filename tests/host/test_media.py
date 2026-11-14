@@ -204,6 +204,7 @@ class TestStress(unittest.TestCase):
         names = {f"/{media.CODECTEST_DIR}/{n}" for n, _ in media.CODECTEST}
         assert {rt.PROBE, rt.UNSUPPORTED} <= names
 
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "no ffmpeg")
     def test_stress(self) -> None:
         with tempfile.TemporaryDirectory() as d, patch.object(media, "STRESS_S", 1):
             root = Path(d)
