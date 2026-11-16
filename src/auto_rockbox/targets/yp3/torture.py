@@ -157,7 +157,7 @@ class Yp3Torture(RockboxTorture):
         return out
 
 
-@scenario("fm", weight=6, target=YP3)
+@scenario("fm", area="fm", weight=6, target=YP3)
 def fm(t: Yp3Torture) -> str:
     """Tune, read the tuner over I2C, run the FM monitor a while: the capture
     keeps running without new overruns (but on a Bluetooth headset, no real

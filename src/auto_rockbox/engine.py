@@ -12,18 +12,25 @@ steps:
 
 Scenarios register like commands (registry.py):
 
-    @scenario("tone", suite="soak", weight=2)
+    @scenario("tone", suite="soak", area="audio", weight=2)
     def tone(step: StepContext) -> Outcome: ...
 
-    @scenario("fm", suite="torture", target={"yp3"})
-    @scenario("sleep", suite="torture", needs={"lcd-gate"})
+    @scenario("fm", suite="torture", area="fm", target={"yp3"})
+    @scenario("sleep", suite="torture", area="lcd", needs={"lcd-gate"})
 
-`target` limits a scenario to those players (a player's own beats a generic
-one of the same name); `needs` names target capabilities or suite features
-(Suite.features), and a scenario is only in a run whose target and suite
-have them all. Per step the run directory gets
+`area` is what the scenario tests, one of AREAS (bring-up's driver order,
+then what builds on the drivers): `arb TARGET test AREA` runs an area's
+scenarios once each (run_once), torture and soak draw from all of them at
+random (run). `target` limits a scenario to those players (a player's own
+beats a generic one of the same name); `needs` names target capabilities or
+suite features (Suite.features), and a scenario is only in a run whose
+target and suite have them all. Per step the run directory gets
 `NNN-name.txt` (the scenario's output), a line in `steps.jsonl`, and
 `NNN-name.png` when the suite makes contact sheets.
+
+A scenario that cannot test anything this time (no music library on the
+card, no Line In capture) returns an Outcome with `skipped` set: a step
+that passes but answers nothing, counted apart in a test pass.
 """
 
 from __future__ import annotations
@@ -32,7 +39,7 @@ import json
 import random
 import time
 import traceback
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -40,6 +47,11 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .target import Target
+
+# What a scenario tests, in the order a test pass runs them: bring-up's
+# drivers (skills/bring-up.md, Phase 3), then what builds on them
+AREAS = ("boot", "lcd", "keys", "storage", "audio", "power", "usb", "rtc", "record", "fm",
+         "bt", "playback", "ui", "plugins", "db")
 
 
 @dataclass
@@ -51,6 +63,7 @@ class Outcome:
     output: str = ""
     lost: bool = False
     sheet: Path | None = None       # a contact sheet to keep as NNN-name.png
+    skipped: bool = False           # nothing to test this time (the note says why)
 
 
 @dataclass
@@ -76,37 +89,70 @@ class Scenario:
     name: str
     fn: ScenarioFn
     suite: str
+    area: str
     weight: int = 1
     targets: frozenset[str] | None = None
     needs: frozenset[str] = frozenset()
 
 
 _scenarios: list[Scenario] = []
+_kinds: set[str] = set()
 
 
-def scenario(name: str, *, suite: str, weight: int = 1,
+def suite_kind(need: str) -> str:
+    """NEED, registered as one that says which kind of suite a scenario is
+    for (a Rockbox dev build's torture), not something a player may lack:
+    left_out() does not list scenarios for another kind"""
+    _kinds.add(need)
+    return need
+
+
+def scenario(name: str, *, suite: str, area: str, weight: int = 1,
              target: Iterable[str] | None = None,
              needs: Iterable[str] = ()) -> Callable[[ScenarioFn], ScenarioFn]:
+    if area not in AREAS:
+        raise ValueError(f"scenario {name}: area {area!r} is none of {', '.join(AREAS)}")
+
     def register(fn: ScenarioFn) -> ScenarioFn:
-        _scenarios.append(Scenario(name, fn, suite, weight,
+        _scenarios.append(Scenario(name, fn, suite, area, weight,
                                    None if target is None else frozenset(target),
                                    frozenset(needs)))
         return fn
     return register
 
 
-def scenarios_for(suite: Suite) -> dict[str, Scenario]:
-    """The suite's scenarios for its target; a player's own beat generic ones"""
-    have = suite.target.capabilities | suite.features
+def _for_target(suite: Suite) -> dict[str, Scenario]:
+    """The suite's scenarios for its target, whatever they need; a player's
+    own beat generic ones"""
     out: dict[str, Scenario] = {}
     for s in _scenarios:
-        if s.suite != suite.name or not s.needs <= have:
+        if s.suite != suite.name:
             continue
         if s.targets is not None and suite.target.name not in s.targets:
             continue
         if s.name not in out or s.targets is not None:
             out[s.name] = s
-    return dict(sorted(out.items()))
+    return out
+
+
+def scenarios_for(suite: Suite) -> dict[str, Scenario]:
+    """The suite's scenarios for its target that it and its target have
+    everything for"""
+    have = suite.target.capabilities | suite.features
+    return dict(sorted((n, s) for n, s in _for_target(suite).items() if s.needs <= have))
+
+
+def left_out(suite: Suite) -> dict[str, str]:
+    """The suite's scenarios for its target that miss something: why"""
+    have = suite.target.capabilities | suite.features
+    return {n: "needs " + ", ".join(sorted(s.needs - have))
+            for n, s in sorted(_for_target(suite).items())
+            if not s.needs <= have and not (s.needs - have) & _kinds}
+
+
+def in_order(table: dict[str, Scenario]) -> list[str]:
+    """TABLE's names in test order: by area (AREAS), then by name"""
+    return sorted(table, key=lambda n: (AREAS.index(table[n].area), n))
 
 
 @dataclass
@@ -118,6 +164,7 @@ class Step:
     ok: bool
     problems: list[str]
     note: str
+    skipped: bool = False
 
 
 class Suite:
@@ -158,7 +205,7 @@ class RunSettings:
 
 
 def run(suite: Suite, s: RunSettings, echo: Callable[[str], None] = print) -> list[Step]:
-    """Steps until S.deadline; the steps taken"""
+    """Steps at random until S.deadline; the steps taken"""
     table = scenarios_for(suite)
     names = s.only or list(table)
     unknown = [n for n in names if n not in table]
@@ -175,16 +222,39 @@ def run(suite: Suite, s: RunSettings, echo: Callable[[str], None] = print) -> li
     if not pool:
         raise SystemExit("every scenario has weight 0")
     rng = random.Random(s.seed)
-    s.out.mkdir(parents=True, exist_ok=True)
-    start = datetime.now()
-    echo(f"{suite.name} on {suite.target.name}: seed {s.seed}, until "
-         f"{s.deadline:%Y-%m-%d %H:%M}, scenarios {', '.join(n for n in names if n in pool)}")
-    suite.start(s.out)
-    steps: list[Step] = []
-    with (s.out / "steps.jsonl").open("a") as log:
+
+    def picks() -> Iterator[str]:
         while datetime.now() < s.deadline:
-            name = rng.choice(pool)
-            ctx = StepContext(len(steps) + 1, name, suite.target, suite, rng, s.out, start)
+            yield rng.choice(pool)
+    return _steps(suite, s.out, table, picks(), rng=rng, echo=echo,
+                  head=f"{suite.name} on {suite.target.name}: seed {s.seed}, until "
+                  f"{s.deadline:%Y-%m-%d %H:%M}, scenarios "
+                  f"{', '.join(n for n in names if n in pool)}")
+
+
+def run_once(suite: Suite, out: Path, names: list[str], seed: int,
+             echo: Callable[[str], None] = print) -> list[Step]:
+    """NAMES in order, a step each (a test pass); the steps taken, fewer if
+    the player was lost for good"""
+    table = scenarios_for(suite)
+    if unknown := [n for n in names if n not in table]:
+        raise SystemExit(f"no such {suite.name} scenario for {suite.target.name}: "
+                         f"{', '.join(unknown)}")
+    return _steps(suite, out, table, iter(names), rng=random.Random(seed), echo=echo,
+                  head=f"{suite.name} on {suite.target.name}: seed {seed}, "
+                  f"{len(names)} steps: {' '.join(names)}")
+
+
+def _steps(suite: Suite, out: Path, table: dict[str, Scenario], names: Iterator[str], *,
+           rng: random.Random, echo: Callable[[str], None], head: str) -> list[Step]:
+    out.mkdir(parents=True, exist_ok=True)
+    start = datetime.now()
+    echo(head)
+    suite.start(out)
+    steps: list[Step] = []
+    with (out / "steps.jsonl").open("a") as log:
+        for name in names:
+            ctx = StepContext(len(steps) + 1, name, suite.target, suite, rng, out, start)
             t0 = time.time()
             try:
                 outcome = table[name].fn(ctx)
@@ -198,19 +268,24 @@ def run(suite: Suite, s: RunSettings, echo: Callable[[str], None] = print) -> li
                 outcome.sheet.replace(ctx.path(".png"))
             st = Step(ctx.index, name, time.strftime("%H:%M:%S", time.localtime(t0)),
                       round(time.time() - t0), not outcome.problems and not outcome.lost,
-                      (["LOST"] if outcome.lost else []) + outcome.problems, outcome.note)
+                      (["LOST"] if outcome.lost else []) + outcome.problems, outcome.note,
+                      outcome.skipped)
             steps.append(st)
             log.write(json.dumps(asdict(st)) + "\n")
             log.flush()
-            echo(f"{st.step:3d} {name:8} {'ok  ' if st.ok else 'FAIL'} {st.note} "
+            echo(f"{st.step:3d} {name:8} {verdict(st):4} {st.note} "
                  f"{'; '.join(st.problems)[:200]}".rstrip())
             if outcome.lost and not suite.recover(ctx, outcome):
                 break
-    suite.finish(s.out, steps)
+    suite.finish(out, steps)
     lost = bool(steps) and steps[-1].problems[:1] == ["LOST"]
     echo(f"done: {len(steps)} steps, {sum(not x.ok for x in steps)} failed"
          + (", player lost" if lost else ""))
     return steps
+
+
+def verdict(st: Step) -> str:
+    return "FAIL" if not st.ok else "skip" if st.skipped else "ok"
 
 
 def deadline(hours: float | None = None, until: str | None = None) -> datetime:

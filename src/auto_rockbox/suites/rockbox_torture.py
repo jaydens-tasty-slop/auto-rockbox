@@ -82,7 +82,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
-from .. import card, fb, linein, media
+from .. import card, engine, fb, linein, media
 from ..bt import bluez
 from ..btpeer import analysis, have_bumble, pcsink
 from ..btpeer.options import HeadsetOptions, HidOptions
@@ -93,7 +93,7 @@ from ..target import RunRequest, Target
 from .torture import Health, Lost, Records, Register, TortureError, TortureSuite, scenario
 
 # Suite features (Suite.features)
-ROCKBOX = "rockbox"             # the suite is a RockboxTorture: every scenario here needs it
+ROCKBOX = engine.suite_kind("rockbox")  # the suite is a RockboxTorture: every scenario needs it
 LCD_GATE = "lcd-gate"           # gate_on() reads the LCD controller's clock gate
 FM_TUNE = "fm-tune"             # fm_tune() tunes without the radio screen
 BT_PC = "bt-pc"                 # this PC can be the player's headset
@@ -1653,7 +1653,7 @@ class RockboxTorture(TortureSuite):
         bitpool back, health. The music repeats all step long: the end of its
         folder would stop the stream that the checks measure."""
         if not self.bt_ready():
-            return f"skipped: {self.bt_off}" if self.bt_off else "setup failed"
+            return self.skip(self.bt_off) if self.bt_off else "setup failed"
         self.sh("repeat 1")
         self.bt_lost = 0
         try:
@@ -1673,14 +1673,14 @@ class RockboxTorture(TortureSuite):
             self.sh("repeat 0")
 
 
-def rockbox_scenario(name: str, *, weight: int, needs: Iterable[str] = ()) -> Register:
+def rockbox_scenario(name: str, *, area: str, weight: int, needs: Iterable[str] = ()) -> Register:
     """A scenario of every player's RockboxTorture, needing NEEDS too"""
-    return scenario(name, weight=weight, needs={ROCKBOX, *needs})
+    return scenario(name, area=area, weight=weight, needs={ROCKBOX, *needs})
 
 
 # ---------------------------------------------------------------- playback scenarios
 
-@rockbox_scenario("codecs", weight=12)
+@rockbox_scenario("codecs", area="playback", weight=12)
 def codecs(t: RockboxTorture) -> str | None:
     """A /codectest file, mostly on Now Playing (the worst case): it plays on"""
     if not (f := t.pick_codec_file()):
@@ -1696,7 +1696,7 @@ def codecs(t: RockboxTorture) -> str | None:
     return f
 
 
-@rockbox_scenario("decode", weight=10)
+@rockbox_scenario("decode", area="playback", weight=10)
 def decode(t: RockboxTorture) -> str | None:
     """A /codectest file from its start while the UI, the SD card or nothing
     else works; after_step compares its decode hash with earlier plays"""
@@ -1721,14 +1721,14 @@ def decode(t: RockboxTorture) -> str | None:
     return f"{f} ({load})"
 
 
-@rockbox_scenario("linein", weight=4)
+@rockbox_scenario("linein", area="audio", weight=4)
 def linein_tone(t: RockboxTorture) -> str | None:
     """The wired output on this PC's Line In (`arb linein serve`): the tone
     file's two tones whole, at a steady level, that of earlier steps"""
     directory = linein.directory(t.target.ws)
     latest = directory / "latest.json"
     if not latest.exists() or time.time() - latest.stat().st_mtime > 5:
-        return "skipped: no Line In capture running (arb linein serve)"
+        return t.skip("no Line In capture running (arb linein serve)")
     t.ready_to_play()
     t.sh("stop")                        # a sink switch under a playing track underruns
     bt = parse_bt_status(t.sh("bt stack status"))
@@ -1794,13 +1794,13 @@ def linein_tone(t: RockboxTorture) -> str | None:
     return note
 
 
-@rockbox_scenario("video", weight=4)
+@rockbox_scenario("video", area="playback", weight=4)
 def video(t: RockboxTorture) -> str | None:
     """Video Player on a random /video file, random keys, then out (its
     stats are judged with the messages)"""
     vids = [v for v in ls_entries(t.sh(f"ls {VIDEO_DIR}")) if v.lower().endswith(VIDEO_EXT)]
     if not vids:
-        return f"skipped: no videos in {VIDEO_DIR}"
+        return t.skip(f"no videos in {VIDEO_DIR}")
     v = t.rng.choice(vids)
     t.ready_to_play()
     # Its settings at their defaults: the keys follow the picture as "Turn
@@ -1830,7 +1830,7 @@ def video(t: RockboxTorture) -> str | None:
     return v
 
 
-@rockbox_scenario("codecmix", weight=8)
+@rockbox_scenario("codecmix", area="playback", weight=8)
 def codecmix(t: RockboxTorture) -> str | None:
     """New playlists started back to back across codec families (each start
     may move the PCM ring or the codec's block), sometimes with an
@@ -1858,7 +1858,7 @@ def codecmix(t: RockboxTorture) -> str | None:
     return " ".join(PurePosixPath(f).name for f in seq)
 
 
-@rockbox_scenario("shuffle", weight=8)
+@rockbox_scenario("shuffle", area="playback", weight=8)
 def shuffle(t: RockboxTorture) -> str:
     """The codec stress playlist shuffled, with skips and seeks across
     codecs: the last track must play"""
@@ -1875,11 +1875,11 @@ def shuffle(t: RockboxTorture) -> str:
     return script
 
 
-@rockbox_scenario("skips", weight=6)
+@rockbox_scenario("skips", area="playback", weight=6)
 def skips(t: RockboxTorture) -> str | None:
     """Random next, previous, seeks, volume and pause on Now Playing"""
     if not (track := t.library_track()):
-        return "skipped: no music library"
+        return t.skip("no music library")
     h = t.health()
     t.sh(f"play {track}")
     t.sh("wps")
@@ -1891,19 +1891,19 @@ def skips(t: RockboxTorture) -> str | None:
     return script
 
 
-@rockbox_scenario("folders", weight=4)
+@rockbox_scenario("folders", area="playback", weight=4)
 def folders(t: RockboxTorture) -> str | None:
     """Next/previous folder on Now Playing (a skip tap, then a seek hold):
     another folder's track plays within FOLDER_BUDGET_S of the hold's release.
     Playback stands still meanwhile: stalls are expected."""
     track = next(filter(None, (t.library_track(album=True) for _ in range(6))), None)
     if not track:
-        return "skipped: no album track found"
+        return t.skip("no album track found")
     t.sh(f"play {track}")
     t.sh("wps")
     time.sleep(3)
     if t.playing().audio != AUDIO_PLAYING:
-        return f"skipped: {track} did not start"
+        return t.skip(f"{track} did not start")
     h = t.health()
     done: list[str] = []
     what = ""
@@ -1938,11 +1938,11 @@ def folders(t: RockboxTorture) -> str | None:
     return what
 
 
-@rockbox_scenario("longplay", weight=4)
+@rockbox_scenario("longplay", area="playback", weight=4)
 def longplay(t: RockboxTorture) -> str | None:
     """A library track on Now Playing for 1-5 min, health every 30 s"""
     if not (track := t.library_track()):
-        return "skipped: no music library"
+        return t.skip("no music library")
     h = t.health()
     t.sh(f"play {track}")
     t.sh("wps")
@@ -1953,7 +1953,7 @@ def longplay(t: RockboxTorture) -> str | None:
     return track
 
 
-@rockbox_scenario("theme", weight=4)
+@rockbox_scenario("theme", area="ui", weight=4)
 def theme(t: RockboxTorture) -> str:
     """A theme switch (stops playback, as upstream), then play on Now Playing"""
     cfg = t.rng.choice(t.theme_cfgs)
@@ -1972,7 +1972,7 @@ def theme(t: RockboxTorture) -> str:
 
 # ---------------------------------------------------------------- UI scenarios
 
-@rockbox_scenario("monkey", weight=8)
+@rockbox_scenario("monkey", area="ui", weight=8)
 def monkey(t: RockboxTorture) -> str:
     """60 random keys anywhere over music, then back out (they may reach a
     menu's power-off: `dryoff` makes it an expected return)"""
@@ -1993,7 +1993,7 @@ def plugin_choices(t: RockboxTorture, cat: str) -> list[str]:
             or (e.endswith("/") and not e.startswith("."))]
 
 
-@rockbox_scenario("plugins", weight=6)
+@rockbox_scenario("plugins", area="plugins", weight=6)
 def plugins(t: RockboxTorture) -> str | None:
     """A random plugin over music, keys, then out with the player's keys (no
     health check: plugins take the CPU)"""
@@ -2001,7 +2001,7 @@ def plugins(t: RockboxTorture) -> str | None:
     cat = t.rng.choice(PLUGIN_DIRS)
     choices = plugin_choices(t, cat)
     if not choices:
-        return f"skipped: no plugins in {ROCKS}/{cat}"
+        return t.skip(f"no plugins in {ROCKS}/{cat}")
     pick = t.rng.choice(choices)
     if pick.endswith("/"):
         # a port's collection (games/arduboy/: a .rock per game) is one
@@ -2009,12 +2009,12 @@ def plugins(t: RockboxTorture) -> str | None:
         cat += "/" + pick.rstrip("/")
         rocks = [r for r in plugin_choices(t, cat) if not r.endswith("/")]
         if not rocks:
-            return f"skipped: no plugins in {ROCKS}/{cat}"
+            return t.skip(f"no plugins in {ROCKS}/{cat}")
         pick = t.rng.choice(rocks)
     return try_plugin(t, f"{cat}/{pick}")
 
 
-@rockbox_scenario("pluginsweep", weight=0)
+@rockbox_scenario("pluginsweep", area="plugins", weight=0)
 def pluginsweep(t: RockboxTorture) -> str | None:
     """Every plugin once, in order, one a step, then random ones as in
     `plugins` (off by default: --only pluginsweep): a plugin that hangs or
@@ -2057,7 +2057,7 @@ def try_plugin(t: RockboxTorture, p: str) -> str:
     return p
 
 
-@rockbox_scenario("menus", weight=6)
+@rockbox_scenario("menus", area="ui", weight=6)
 def menus(t: RockboxTorture) -> str:
     """A random main menu entry by keys over music, a random walk, and Home
     must bring the main menu back (no screen that traps the keys)"""
@@ -2074,7 +2074,7 @@ def menus(t: RockboxTorture) -> str:
     return f"{item}: {walk}"
 
 
-@rockbox_scenario("dbdeep", weight=4)
+@rockbox_scenario("dbdeep", area="db", weight=4)
 def dbdeep(t: RockboxTorture) -> str | None:
     """Deep into the database, Home, Database again: the next visit must
     start at the root (a stale table once spun the UI until the watchdog)"""
@@ -2114,7 +2114,7 @@ def dbdeep(t: RockboxTorture) -> str | None:
     return f"depth {depth}"
 
 
-@rockbox_scenario("db", weight=4)
+@rockbox_scenario("db", area="db", weight=4)
 def db(t: RockboxTorture) -> str:
     """The database browsed while playing; sometimes a foreground update
     (stops playback and holds the UI until done)"""
@@ -2137,7 +2137,7 @@ def db(t: RockboxTorture) -> str:
     return "browse during playback, db update"
 
 
-@rockbox_scenario("crawl", weight=16)
+@rockbox_scenario("crawl", area="ui", weight=16)
 def crawl(t: RockboxTorture) -> str | None:
     """One step of exploring the UI graph (Coverage): to the node whose keys
     are least tried, its least-tried key (sometimes one more), the activity
@@ -2188,7 +2188,7 @@ def crawl(t: RockboxTorture) -> str | None:
     return what
 
 
-@rockbox_scenario("sleep", weight=4, needs={LCD_GATE})
+@rockbox_scenario("sleep", area="lcd", weight=4, needs={LCD_GATE})
 def sleep(t: RockboxTorture) -> str:
     """LCD sleep (the controller's clock gated) and wake by a key, sometimes
     with settings loaded while asleep"""
@@ -2212,7 +2212,7 @@ def sleep(t: RockboxTorture) -> str:
 
 # ---------------------------------------------------------------- recording and radio
 
-@rockbox_scenario("record", weight=8)
+@rockbox_scenario("record", area="record", weight=8)
 def record(t: RockboxTorture) -> str:
     """dev `rec`: a random format, source (FM where the player tunes without
     its screen, FM_TUNE) and channels, sometimes MP3 pre-recording; no
@@ -2252,7 +2252,7 @@ def record(t: RockboxTorture) -> str:
     return what
 
 
-@rockbox_scenario("recui", weight=4)
+@rockbox_scenario("recui", area="record", weight=4)
 def recui(t: RockboxTorture) -> str | None:
     """The recording screen through the main menu: start, record, stop,
     leave; a new file in /recordings"""
@@ -2277,7 +2277,7 @@ def recui(t: RockboxTorture) -> str | None:
     return f"{secs}s"
 
 
-@rockbox_scenario("fmui", weight=4)
+@rockbox_scenario("fmui", area="fm", weight=4)
 def fmui(t: RockboxTorture) -> str | None:
     """The FM radio screen through the main menu: decline a first-run
     autoscan, seek, step, leave by Home"""
@@ -2298,7 +2298,7 @@ def fmui(t: RockboxTorture) -> str | None:
 
 # ---------------------------------------------------------------- the card and USB
 
-@rockbox_scenario("fs", weight=4)
+@rockbox_scenario("fs", area="storage", weight=4)
 def fs(t: RockboxTorture) -> str:
     """Files made and counted after each (`mkcheck`), some deleted, the rest
     counted, made again: a lost or failed create is a filesystem bug"""
@@ -2322,7 +2322,7 @@ def fs(t: RockboxTorture) -> str:
     return what
 
 
-@rockbox_scenario("sdodd", weight=4)
+@rockbox_scenario("sdodd", area="storage", weight=4)
 def sdodd(t: RockboxTorture) -> str:
     """SD write and read-back through the unaligned (bounce buffer) path"""
     bufkb = t.rng.choice([4, 8, 16, 32])
@@ -2340,12 +2340,12 @@ def sdodd(t: RockboxTorture) -> str:
     return what
 
 
-@rockbox_scenario("meta", weight=4)
+@rockbox_scenario("meta", area="db", weight=4)
 def meta(t: RockboxTorture) -> str | None:
     """Metadata of a random library file (the database scan's parser), in
     under 3 s"""
     if not (track := t.library_track()):
-        return "skipped: no music library"
+        return t.skip("no music library")
     out = " ".join(t.sh(f"meta {track}", timeout=120))
     m = re.search(r"meta: (\d) in (\d+) ms", out)
     if not m:
@@ -2355,7 +2355,7 @@ def meta(t: RockboxTorture) -> str | None:
     return track
 
 
-@rockbox_scenario("missing", weight=2)
+@rockbox_scenario("missing", area="playback", weight=2)
 def missing(t: RockboxTorture) -> str:
     """A play of a file that is not there, sometimes over music: playback
     stops as at a playlist's end. It sat in "playing" at 0/0 for good, the
@@ -2373,7 +2373,7 @@ def missing(t: RockboxTorture) -> str:
     return path
 
 
-@rockbox_scenario("usb", weight=2)
+@rockbox_scenario("usb", area="usb", weight=2)
 def usb(t: RockboxTorture) -> str:
     """A simulated unplug and replug during playback"""
     h = t.health()
@@ -2398,7 +2398,7 @@ def bt_scenario(case: str, weight: int, bumble: bool = False,
             return t.bt_case(fn)
         step.__doc__ = fn.__doc__
         pc = {BT_PC, BT_BUMBLE} if bumble else {BT_PC}
-        rockbox_scenario(f"bt-{case}", weight=weight, needs=pc | set(needs))(step)
+        rockbox_scenario(f"bt-{case}", area="bt", weight=weight, needs=pc | set(needs))(step)
         return fn
     return register
 
@@ -2455,7 +2455,7 @@ def bt_pcpower(t: RockboxTorture) -> str:
     restarted; skipped while other devices use the adapter)"""
     pc = t.link()
     if others := pc.others():
-        return f"pcpower skipped: {len(others)} other device(s) on the adapter"
+        return t.skip(f"pcpower: {len(others)} other device(s) on the adapter")
     mid = t.rng.random() < 0.3
     off_s = t.rng.choice([0.5, 3, 10, 25])
     what = f"pcpower{' mid-connect' if mid else ''}, off {off_s} s"
@@ -2718,7 +2718,7 @@ def bt_headset(t: RockboxTorture) -> str:
     then the player pairs with this PC again and streams."""
     pc = t.link()
     if others := pc.others():
-        return f"headset skipped: {len(others)} other device(s) on the adapter"
+        return t.skip(f"headset: {len(others)} other device(s) on the adapter")
     cycles, seed = t.rng.randint(3, 8), t.rng.randrange(1 << 30)
     out = t.step_file("headset", "")
     what = f"headset x{cycles} seed {seed} ({out.name})"
@@ -2759,7 +2759,7 @@ def bt_hid(t: RockboxTorture) -> str:
     must see each key. Then it pairs with this PC again and streams."""
     pc = t.link()
     if others := pc.others():
-        return f"hid skipped: {len(others)} other device(s) on the adapter"
+        return t.skip(f"hid: {len(others)} other device(s) on the adapter")
     kind = t.rng.choice(["ds4", "keyboard"])
     press = t.rng.choices(HID_KEYS + (HID_DS4_KEYS if kind == "ds4" else []),
                           k=t.rng.randint(4, 10))

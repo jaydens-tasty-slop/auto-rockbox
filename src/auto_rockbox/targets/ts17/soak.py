@@ -181,7 +181,7 @@ def _heard(step: StepContext, b: Boot, label: str, *, need: int = 6, stereo: boo
 
 # ---------------------------------------------------------------- playback
 
-@scenario("tone", suite="soak", weight=2, target=TS17)
+@scenario("tone", suite="soak", area="audio", weight=2, target=TS17)
 def tone(step: StepContext) -> Outcome:
     """The tone file from the browser plays whole on Line In"""
     bench = Bench.load(step.target.ws)
@@ -192,7 +192,7 @@ def tone(step: StepContext) -> Outcome:
     return _heard(step, b, "")
 
 
-@scenario("codec", suite="soak", weight=5, target=TS17)
+@scenario("codec", suite="soak", area="playback", weight=5, target=TS17)
 def codec(step: StepContext) -> Outcome:
     """A random clip of codecs/: a tone clip plays whole on Line In (the
     folder plays on into the next clip, so only up to its step-down); a
@@ -213,7 +213,7 @@ def codec(step: StepContext) -> Outcome:
     return _heard(step, b, name, stereo=e.kind == "stereo", span=tone_span(e))
 
 
-@scenario("video", suite="soak", weight=3, target=TS17)
+@scenario("video", suite="soak", area="playback", weight=3, target=TS17)
 def video(step: StepContext) -> Outcome:
     """A random video of video/, paused and resumed 1-3 times: the Video
     Player's stats (mpegplayer has none), and the tone on Line In before the
@@ -244,7 +244,7 @@ def video(step: StepContext) -> Outcome:
     return _heard(step, b, b.outcome.note, need=5, stereo=e.kind == "stereo", span=VIDEO_SPAN)
 
 
-@scenario("wps", suite="soak", weight=2, target=TS17)
+@scenario("wps", suite="soak", area="playback", weight=2, target=TS17)
 def wps(step: StepContext) -> Outcome:
     """The tone file, then random Left, Right and Select on the playback
     screen; no Up or Down: the volume is saved and would carry over"""
@@ -260,7 +260,7 @@ def wps(step: StepContext) -> Outcome:
 
 # ---------------------------------------------------------------- other screens
 
-@scenario("browse", suite="soak", weight=2, target=TS17)
+@scenario("browse", suite="soak", area="ui", weight=2, target=TS17)
 def browse(step: StepContext) -> Outcome:
     """Random walks through the file browser"""
     head = _keys(BOOT_MS, _pick(FILES), OPEN_MS)
@@ -269,7 +269,7 @@ def browse(step: StepContext) -> Outcome:
     return boot(step, 70, keys).outcome
 
 
-@scenario("fm", suite="soak", weight=1, target=TS17)
+@scenario("fm", suite="soak", area="fm", weight=1, target=TS17)
 def fm(step: StepContext) -> Outcome:
     """The radio screen: random tuning and presets"""
     head = _keys(BOOT_MS, _pick(RADIO), 6000)
@@ -278,7 +278,7 @@ def fm(step: StepContext) -> Outcome:
     return boot(step, 60, keys).outcome
 
 
-@scenario("rec", suite="soak", weight=2, target=TS17)
+@scenario("rec", suite="soak", area="record", weight=2, target=TS17)
 def rec(step: StepContext) -> Outcome:
     """A recording: Select starts, pauses and resumes it, a held Left stops
     it (closing the file), a second leaves the screen. `usb` checks the
@@ -288,7 +288,7 @@ def rec(step: StepContext) -> Outcome:
     return boot(step, 60, keys).outcome
 
 
-@scenario("boot", suite="soak", weight=2, target=TS17, needs={"cold"})
+@scenario("boot", suite="soak", area="boot", weight=2, target=TS17, needs={"cold"})
 def cold_boot(step: StepContext) -> Outcome:
     """A cold boot through the boot chain, no keys: the DAC and clock come up"""
     return boot(step, 25, cold=True, expect=("dac: powered up", "rtc: ")).outcome
@@ -336,7 +336,7 @@ def _round_trip(uuid: str | None, size: int, since: datetime, started: float,
     return probs, f"{note}; {rec_note}" if rec_note else note
 
 
-@scenario("usb", suite="soak", weight=2, target=TS17, needs={"usb", "storage"})
+@scenario("usb", suite="soak", area="usb", weight=2, target=TS17, needs={"usb", "storage"})
 def usb(step: StepContext) -> Outcome:
     """A boot with Rockbox's USB on: a random 2-12 MiB file written to the
     card and read back, and the recordings this run made hold samples"""
@@ -408,13 +408,13 @@ def _alarm(step: StepContext, lead_s: float, after_s: int, press: str,
     return b.outcome
 
 
-@scenario("alarm", suite="soak", weight=1, target=TS17)
+@scenario("alarm", suite="soak", area="rtc", weight=1, target=TS17)
 def alarm(step: StepContext) -> Outcome:
     """The wake-up alarm, set about 3 minutes ahead, fires while on"""
     return _alarm(step, 150, 60, "", ("rtc: alarm in", "rtc: alarm while on"))
 
 
-@scenario("poweroff", suite="soak", weight=1, target=TS17)
+@scenario("poweroff", suite="soak", area="power", weight=1, target=TS17)
 def poweroff(step: StepContext) -> Outcome:
     """Power-off by the on/off key with the alarm about 2 minutes ahead: the
     alarm starts the player again and the clock comes back from the PMU

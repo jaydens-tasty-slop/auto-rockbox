@@ -28,7 +28,8 @@ is judged, and when:
 Scenarios register with this module's `scenario` (the engine's, for this
 suite) and get the suite itself, a player's subclass of TortureSuite that
 knows its shell's commands (`@player_suite("yp3")`). They record problems with
-fail(), and return the step's note. Rockbox dev builds share one shell: their
+fail(), and return the step's note, or skip(why)'s when there was nothing to
+test (no music library on the card). Rockbox dev builds share one shell: their
 suites subclass RockboxTorture (suites/rockbox_torture.py), which holds the
 scenarios every player runs; a player's module (targets/NAME/torture.py)
 adds what only its own shell or hardware has.
@@ -263,6 +264,7 @@ class TortureSuite(Suite):
         self.problems: list[str] = []
         self.notes: list[str] = []
         self.transcript: list[str] = []
+        self.skipped = False
 
     # ---- the run
 
@@ -307,6 +309,7 @@ class TortureSuite(Suite):
         and replies; a lost player collected"""
         self._step, self.rng = ctx, ctx.rng
         self.problems, self.notes, self.transcript = [], [], []
+        self.skipped = False
         try:
             note = body() or ""
         except Lost as e:
@@ -321,7 +324,7 @@ class TortureSuite(Suite):
                                output=self.output(), lost=True)
             note = why
         return Outcome(list(self.problems), "; ".join(filter(None, [note, *self.notes])),
-                       self.output())
+                       self.output(), skipped=self.skipped)
 
     def check(self, step: StepContext, outcome: Outcome) -> list[str]:
         problems: list[str] = []
@@ -380,6 +383,11 @@ class TortureSuite(Suite):
 
     def note(self, text: str) -> None:
         self.notes.append(text)
+
+    def skip(self, why: str) -> str:
+        """The step's note when it had nothing to test: `return t.skip(why)`"""
+        self.skipped = True
+        return f"skipped: {why}"
 
     def output(self) -> str:
         return "\n".join(self.transcript) + "\n"
@@ -646,24 +654,25 @@ def suite_class(target: str) -> type[TortureSuite]:
 class Register:
     """What `scenario` returns: registers a function of the suite as a step"""
 
-    def __init__(self, name: str, weight: int, target: Iterable[str] | None,
+    def __init__(self, name: str, area: str, weight: int, target: Iterable[str] | None,
                  needs: Iterable[str]) -> None:
-        self.name, self.weight, self.target, self.needs = name, weight, target, needs
+        self.name, self.area, self.weight = name, area, weight
+        self.target, self.needs = target, needs
 
     def __call__[S: TortureSuite](self, fn: Callable[[S], str | None]) -> Callable[[S], str | None]:
         def step(ctx: StepContext) -> Outcome:
             suite = cast(S, ctx.suite)
             return suite.run_step(ctx, lambda: fn(suite))
-        engine.scenario(self.name, suite=TortureSuite.name, weight=self.weight,
+        engine.scenario(self.name, suite=TortureSuite.name, area=self.area, weight=self.weight,
                         target=self.target, needs=self.needs)(step)
         return fn
 
 
-def scenario(name: str, *, weight: int = 1, target: Iterable[str] | None = None,
+def scenario(name: str, *, area: str, weight: int = 1, target: Iterable[str] | None = None,
              needs: Iterable[str] = ()) -> Register:
     """engine.scenario for torture steps: FN gets the suite (the player's
     subclass), records problems with fail() and returns the step's note"""
-    return Register(name, weight, target, needs)
+    return Register(name, area, weight, target, needs)
 
 
 # ---------------------------------------------------------------- commands

@@ -171,12 +171,17 @@ def sim_step(command: str, problem: str | None = None) -> Callable[[SimSuite], s
     return step
 
 
-for _name, _command in (("sim-ok", "work"), ("sim-glitch", "glitch"), ("sim-leak", "leak"),
-                        ("sim-crash", "crash"), ("sim-hang", "hang"),
-                        ("sim-poweroff", "poweroff")):
-    gen.scenario(_name, target={"sim"})(sim_step(_command))
-gen.scenario("sim-fail", target={"sim"})(sim_step("work", "a problem of its own"))
-gen.scenario("sim-off", weight=0, target={"sim"})(sim_step("work"))
+def sim_skip(t: SimSuite) -> str:
+    return t.skip("nothing to test")
+
+
+for _name, _command, _area in (("sim-ok", "work", "storage"), ("sim-glitch", "glitch", "audio"),
+                               ("sim-leak", "leak", "playback"), ("sim-crash", "crash", "power"),
+                               ("sim-hang", "hang", "usb"), ("sim-poweroff", "poweroff", "power")):
+    gen.scenario(_name, area=_area, target={"sim"})(sim_step(_command))
+gen.scenario("sim-fail", area="audio", target={"sim"})(sim_step("work", "a problem of its own"))
+gen.scenario("sim-off", area="ui", weight=0, target={"sim"})(sim_step("work"))
+gen.scenario("sim-skip", area="ui", target={"sim"})(sim_skip)
 
 
 def sim_run(root: Path, only: list[str], steps: int, seed: int = 3, *,
