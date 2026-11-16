@@ -434,8 +434,6 @@ class FakePcLink(rt.PcLink):
 class FakeTorture(rt.RockboxTorture):
     """RockboxTorture with its defaults, as a new player's suite starts"""
 
-    card_dir = "/rbtest"
-
 
 class FakePlayer(Target):
     """A Rockbox player with no transport: a launch boots the shell in memory,
@@ -447,11 +445,12 @@ class FakePlayer(Target):
     lcd = Lcd(128, 160)
     key_letters = "UDLRS"
     capabilities = frozenset({"shell", "usb", "storage"})
+    dev_dir = "/rbtest"
 
     def __init__(self, ws: Workspace) -> None:
         super().__init__(ws)
         self.requests: list[RunRequest] = []
-        self.dev = DevShell(self.name, "1209", "00ff", FakeTorture.card_dir)
+        self.dev = DevShell(self.name, "1209", "00ff", self.dev_dir)
         self.card = ws.root / "card"
         self.storage_boots: list[Path | None] = []
 

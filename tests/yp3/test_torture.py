@@ -47,7 +47,7 @@ class FakeYp3(Yp3):
     def __init__(self, ws: Workspace) -> None:
         super().__init__(ws)
         self.requests: list[RunRequest] = []
-        self.dev = DevShell("yp3", "1209", "0001", yt.Yp3Torture.card_dir)
+        self.dev = DevShell("yp3", "1209", "0001", Yp3.dev_dir)
 
     def lock(self) -> DeviceLock:
         return DeviceLock(self.name, file=str(self.ws.root / "device.lock"))

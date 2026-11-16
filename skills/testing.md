@@ -1,9 +1,42 @@
-# Soak and torture runs
+# Tests, soak and torture runs
 
-A driver works only once it has run for hours while other things happen
-around it. Two kinds of long run find what short tests miss. Both pick
-scenarios at random by weight until a deadline, record every step, and keep
-going after a failure so that one bug doesn't hide the next.
+Every check of a player is a **scenario**: one question with a check that
+answers it, registered for every player that has what it needs. The same
+scenarios run three ways:
+
+- `arb TARGET test`: each once, in bring-up order, with a verdict. Run it
+  after a change, while bringing up a driver, and on a release candidate.
+- `arb TARGET soak` and `arb TARGET torture`: at random by weight for hours.
+  A driver works only once it has run for hours while other things happen
+  around it, and long runs find what a pass misses.
+
+Both long runs record every step and keep going after a failure so that one
+bug doesn't hide the next.
+
+## Test passes
+
+```
+arb yp3 test build/test-elf/rockbox.elf build/test/RUN                 # everything
+arb yp3 test build/test-elf/rockbox.elf build/test/RUN storage audio   # some areas
+```
+
+The soak scenarios come first (no dev shell needed), then the torture
+scenarios over the dev shell. Each step passes, fails, or **skips** when it
+had nothing to test (no music library on the card, no Line In capture).
+`OUT/summary.md` lists every step, then the scenarios left out and what
+they need: during bring-up, that list is what is left to do.
+
+- **Areas** follow bring-up's driver order, then what builds on the
+  drivers: boot, lcd, keys, storage, audio, power, usb, rtc, record, fm, bt,
+  playback, ui, plugins, db (`engine.AREAS`).
+- A pass uses seed 1 unless `--seed` says otherwise, so two builds make the
+  same choices. `--only a,b` runs named scenarios (also those off by
+  default), `--repeat N` runs N steps of each.
+- One step samples one choice (one codec file, one plugin). A pass catches
+  what breaks outright; torture's hours catch the rest.
+- All of the YP3's torture scenarios once take about 20 minutes.
+
+## Long runs
 
 | | `arb TARGET soak` | `arb TARGET torture` |
 |---|---|---|
@@ -81,19 +114,32 @@ For each failure:
 
 ## Writing scenarios
 
-A scenario is a function registered for a suite. It gets a `StepContext`
-(the target, the run's random generator, the step's output path) and
-returns an `Outcome` (problems, a note, the output text):
+A scenario is a function registered for a suite and an area. It gets a
+`StepContext` (the target, the run's random generator, the step's output
+path) and returns an `Outcome` (problems, a note, the output text):
 
 ```python
 from auto_rockbox.engine import Outcome, StepContext, scenario
 from auto_rockbox.suites.soak import boot
 
-@scenario("radio", suite="soak", weight=2, target={"ts17"})
-def radio(step: StepContext) -> Outcome:
-    return boot(step, 60, "9000 D S 1500 R R", expect=("radio: tuned",)).outcome
+@scenario("sdtest", suite="soak", area="storage", weight=2)
+def sdtest(step: StepContext) -> Outcome:
+    out = boot(step, 90, settings={"sdtest": "512 16 odd"}).outcome
+    if "errors 0" not in out.output:
+        out.problems.append("SD read-back errors")
+    return out
 ```
 
+- **A check is a scenario, not a script.** A probe or one-off script that
+  checks something (a driver just brought up, a fix) becomes a scenario in
+  its area, so it runs again on the next change, in every pass and every
+  long run, and on the next player.
+- **Generic first.** Write it for every player: the Target API, the dev
+  shell's shared commands (`apps/dev_shell.c`) or the run settings every
+  dev build takes, with what differs (a path, a limit, a station) in the
+  Target or the workspace config. A case found on one player is a case for
+  all. Only a scenario that needs hardware or shell commands no other
+  player has goes in `targets/NAME/`.
 - **One question per scenario**, with a check that answers it: an expected
   log line, a tone on Line In, a frame on camera, a counter that must not
   move.
@@ -103,6 +149,9 @@ def radio(step: StepContext) -> Outcome:
 - **No false positives.** A checker that cries wolf gets ignored. When a
   check fails on a good player, fix the check first, and add a test with
   the sample that fooled it.
+- **Skip when there is nothing to test**: `return t.skip(why)` in torture,
+  `Outcome(note="skipped: why", skipped=True)` in soak. A skip that passed
+  silently would hide a card without its test files.
 - **Health between steps** (torture): faults and panics in the log, PCM
   underruns, UI stalls over 1 s, and free memory that keeps falling
   (free plus the playback buffer while playback holds it, `abuf`: a port
@@ -110,9 +159,12 @@ def radio(step: StepContext) -> Outcome:
   Each counter has a budget. Going over it is a failure even when the step
   itself passed.
 
-Soak scenarios follow a player's menus, so they go in
-`targets/NAME/soak.py`. Scenarios that only need the `Target` API go in
-`suites/`.
+Every player's soak scenarios (`suites/soak.py`: boot, crash, poweroff,
+sdtest, fsck, tone) use only the run settings every dev build takes
+(`dev_boot`: `sdtest=`, `crash=`, `poweroff=`, `play=`, `sh=`, ...) and the
+Target API, so they run on a player whose dev shell doesn't work yet. A
+player's own (`targets/NAME/soak.py`) follow its menus, and one of the same
+name replaces the generic one.
 
 ### Torture suites
 
@@ -122,10 +174,10 @@ torture scenarios are shared: `suites/rockbox_torture.py` holds them and
 `targets/NAME/torture.py`, registered with `@player_suite("NAME")`, that
 declares what differs:
 
-- `card_dir`, the build's `DEV_CARD_DIR` (required): the settings files the
-  steps load and the tone live there. By default the suite writes the
-  settings files once per run over USB mass storage; the YP3 pushes them
-  with every boot instead.
+- The card's dev folder is the Target's `dev_dir` (the build's
+  `DEV_CARD_DIR`): the settings files the steps load and the tone live
+  there. By default the suite writes the settings files once per run over
+  USB mass storage; the YP3 pushes them with every boot instead.
 - `main_menu`, `slow_codecs`, `expected_msgs` (errors a scenario provokes
   on purpose, such as the YP3's heap limits), `charge_limit`, and
   `boot_settings()` (the TS17 boots with `bluetooth=off` unless its
@@ -143,8 +195,8 @@ declares what differs:
 
 A scenario that needs commands only one player's shell has (the YP3's `fm`,
 `fmregs`, `fmmon`) registers in that player's module with `target={"NAME"}`.
-New shared scenarios go in `suites/rockbox_torture.py` (`rockbox_scenario`),
-gated by a feature when a player may lack what they need.
+New shared scenarios go in `suites/rockbox_torture.py` (`rockbox_scenario`,
+with its area), gated by a feature when a player may lack what they need.
 
 ## Bluetooth peers
 

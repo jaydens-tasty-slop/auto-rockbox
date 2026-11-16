@@ -50,6 +50,13 @@ Each Rockbox run must show all of these:
       battery percentage must track the time left within 10 points over the
       whole run.
 
+### Test pass
+
+- [ ] A clean `arb TARGET test` pass on the candidate
+      ([testing.md](testing.md), Test passes): every step passes or its
+      skip is explained, and every scenario left out is for a feature the
+      port doesn't ship.
+
 ### Torture
 
 - [ ] **At least 50 hours** of `arb TARGET torture` in total, across the

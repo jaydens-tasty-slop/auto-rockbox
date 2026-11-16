@@ -59,7 +59,9 @@ def test_pass() -> None:
         player = SimPlayer(Workspace(root))
         args = Namespace(image=image, out=root / "pass", areas=[], only=None, repeat=1, seed=1,
                          settings=[], shots=False, after_boot=[], no_boot=False)
-        with fast(Clock()), mock.patch.object(testpass, "suite_class", return_value=SimSuite):
+        torture = [s for s in engine._scenarios if s.suite == "torture"]
+        with fast(Clock()), mock.patch.object(testpass, "suite_class", return_value=SimSuite), \
+                mock.patch.object(engine, "_scenarios", torture):
             rc = testpass.test_cmd(Context(player.ws, player), args)
         assert rc == 1
         steps = engine.load_steps(root / "pass/torture")

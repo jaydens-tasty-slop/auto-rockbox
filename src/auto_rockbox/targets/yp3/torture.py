@@ -91,7 +91,6 @@ class Yp3Torture(RockboxTorture):
     """The torture run on the YP3. Config: as RockboxTorture's ([targets.yp3]
     bt_address, menu_coverage)."""
 
-    card_dir = "/yp3dev"            # yp3.h DEV_CARD_DIR
     slow_codecs = SLOW_CODECS
     expected_msgs = EXPECTED_MSG
     charge_limit = CHARGE_LIMIT

@@ -234,8 +234,10 @@ Driver order, each to "works, measured, documented" before the next:
 
 For each driver: collect the facts (registers, init tables, timings) into
 `docs/hardware.md`, write the smallest test that answers one question, and
-read the result off the log, Line In or the camera, never off a guess. Then
-soak it: [testing.md](testing.md).
+read the result off the log, Line In or the camera, never off a guess. Write
+that test as a scenario in the driver's area, for every player where it can
+be, not as a one-off script: `arb TARGET test AREA` then answers it again
+after every change. Then soak it: [testing.md](testing.md).
 
 ### One home for every constant, and guesses marked as guesses
 

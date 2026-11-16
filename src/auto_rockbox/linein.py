@@ -58,6 +58,7 @@ FULL_DB = 6.0               # a tone second this close to the loudest is at full
                             # (tone.wav's step-down at 10 s is 12 dB)
 MIN_HZ = 50.0               # below this a spectrum peak is hum or offset, not the signal
 LAST_DEFAULT = 60           # seconds a bare `arb linein analyse` looks at
+LIVE_S = 5                  # the latest second is this fresh while the capture runs
 
 Kind = Literal["stereo", "tone", "music"]
 
@@ -68,6 +69,12 @@ class CaptureError(ArbError):
 
 def directory(ws: Workspace) -> Path:
     return ws.section("linein").path("dir", "analysis/audio")
+
+
+def running(directory: Path) -> bool:
+    """Whether `arb linein serve` is publishing seconds into DIRECTORY"""
+    latest = directory / "latest.json"
+    return latest.exists() and time.time() - latest.stat().st_mtime <= LIVE_S
 
 
 # ---------------------------------------------------------------- capture

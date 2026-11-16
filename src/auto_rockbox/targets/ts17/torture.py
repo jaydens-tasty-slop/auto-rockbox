@@ -22,8 +22,6 @@ class Ts17Torture(RockboxTorture):
     """The torture run on the TS17. Config: as RockboxTorture's ([targets.ts17]
     bt_address, menu_coverage)."""
 
-    card_dir = "/ts17test"          # ts17.h DEV_CARD_DIR
-
     def boot_settings(self) -> dict[str, str]:
         # The TS17 connects to this PC at boot when its Bluetooth is on, and
         # its stream would leave Line In for this PC's speakers. Off then,

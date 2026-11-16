@@ -38,7 +38,7 @@ class FakeTs17(Ts17):
     def __init__(self, ws: Workspace) -> None:
         super().__init__(ws)
         self.requests: list[RunRequest] = []
-        self.dev = DevShell("ts17", "1209", "0002", Ts17Torture.card_dir)
+        self.dev = DevShell("ts17", "1209", "0002", Ts17.dev_dir)
         self.card = ws.root / "card"
         self.storage_boots = 0
 

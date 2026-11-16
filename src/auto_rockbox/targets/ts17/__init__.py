@@ -77,6 +77,7 @@ class Ts17(Target):
     key_letters = "UDLRSVvP"     # ring, centre, volume up/down, on/off
     capabilities = frozenset({"framebuffer", "shell", "battery", "cold", "usb", "storage"})
     return_line = devblock.RETURN_LINE
+    dev_dir = "/ts17test"           # ts17.h DEV_CARD_DIR
     log_faults = r"lcd: frame timed out"
     # the soak's checks are wired (Line In), and a paired PC would take the stream
     soak_settings: ClassVar[dict[str, str]] = {"bluetooth": "off"}

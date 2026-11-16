@@ -96,6 +96,9 @@ class Target(ABC):
     log_faults: ClassVar[str] = ""
     # Run settings every soak boot gets unless --set or the step says otherwise
     soak_settings: ClassVar[dict[str, str]] = {}
+    # The dev build's folder on the card (its DEV_CARD_DIR): the test tone
+    # (tone.mp3) and the settings files the tests load
+    dev_dir: ClassVar[str] = ""
 
     def __init__(self, ws: Workspace) -> None:
         self.ws = ws

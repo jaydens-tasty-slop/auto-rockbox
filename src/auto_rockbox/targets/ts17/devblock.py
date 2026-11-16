@@ -45,6 +45,7 @@ SETTINGS: Mapping[str, tuple[str, ...] | None] = {
     "usb": ("0", "1", "storage"),   # USB with the dev shell (charge only), or mass storage
     "play": None, "ls": None, "monitor": None, "sdlog": ("0", "1"),
     "poweroff": ("real",), "crash": ("udf", "panic"),
+    "sdtest": None, "sh": None,     # dev_boot: an SD write/read check, shell commands
 }
 
 

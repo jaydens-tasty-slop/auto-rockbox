@@ -97,6 +97,8 @@ class Yp3(Target):
     lcd = Lcd(128, 160, "rgb565-swapped")
     key_letters = "UDLRS"
     capabilities = frozenset({"shell", "battery", "usb", "storage"})
+    return_line = "dev return: watchdog feeds stopped"     # recovery-watchdog-yp3.c
+    dev_dir = "/yp3dev"             # yp3.h DEV_CARD_DIR
 
     def __init__(self, ws: Workspace) -> None:
         super().__init__(ws)

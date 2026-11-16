@@ -14,7 +14,7 @@ handling. One `Target` subclass per player; everything else is shared.
 - [skills/adding-a-target.md](skills/adding-a-target.md): the dev-build
   contract on the device and the `Target` class on the host.
 - [skills/dev-loop.md](skills/dev-loop.md): day-to-day use of `arb`.
-- [skills/testing.md](skills/testing.md): soak and torture runs, Line In
+- [skills/testing.md](skills/testing.md): test passes, soak and torture runs, Line In
   checks, reading failures.
 - [skills/audio-quality.md](skills/audio-quality.md): measuring the output
   against a reference device, calibrating levels, fitting an EQ.
@@ -48,3 +48,6 @@ handling. One `Target` subclass per player; everything else is shared.
   comment); firmware drivers that ship never contain anything derived from
   stock (skills/bring-up.md, Ground rules).
 - Before a hardware step, write down what it tests and why.
+- Checks are tests: a new check is a scenario (`arb TARGET test`, soak,
+  torture), generic across players where it can be, not a one-off script
+  (skills/testing.md, Writing scenarios).

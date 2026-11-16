@@ -78,6 +78,10 @@ send a key first.
 - Build variants into a new directory. A long run reflashes its image on
   every recovery, so rebuilding over it changes what the run tests.
 - Every crash or open experiment goes into the port's `TODO.md` at once.
+- A check worth running twice is a test: a scenario in `suites/` (or the
+  player's module when only it has the hardware), not a script
+  ([testing.md](testing.md), Writing scenarios). `arb TARGET test` after
+  a change, before a long run.
 
 ## Adding commands
 

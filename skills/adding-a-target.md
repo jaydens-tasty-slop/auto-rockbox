@@ -94,6 +94,8 @@ class MyPlayer(Target):
     lcd = Lcd(128, 160)
     key_letters = "UDLRSP"
     capabilities = frozenset({"framebuffer", "shell", "battery", "usb", "storage"})
+    return_line = "returning to the host"     # the dev build's log line at an on-time return
+    dev_dir = "/mydev"                        # the build's DEV_CARD_DIR
 
     def launch(self, req: RunRequest) -> None: ...      # image + self.run_config(req), start it
     def wait_return(self, deadline, tick) -> bool: ...  # back in download mode?
@@ -116,13 +118,18 @@ the workspace's `[plugins] modules`.
   in the subpackage's `commands.py`. A player command of the same name as a
   generic one replaces it for that player (the YP3's `run` adds `--push` and
   `--modules`).
-- **Soak scenarios**: `@scenario("tone", suite="soak", target={"myplayer"})`.
-  Menu layouts and key paths are player specific, so the soak's scenarios
-  live with the target.
+- **Tests come with the dev loop**: every player's soak scenarios
+  (boot, crash, sdtest, tone, ...) run as soon as `launch`, `wait_return`
+  and `read_log` work, judged by `return_line`; `arb myplayer test` lists
+  what else needs a capability or the dev shell ([testing.md](testing.md)).
+- **Soak scenarios of its own**:
+  `@scenario("radio", suite="soak", area="fm", target={"myplayer"})`, for
+  what follows its menus and key paths. Prefer a generic scenario that
+  works on every player ([testing.md](testing.md), Writing scenarios).
 - **Torture**: a `RockboxTorture` subclass in the subpackage's `torture.py`
-  with `@player_suite("myplayer")`, its `card_dir` (the build's
-  `DEV_CARD_DIR`) and the features its build has; the shared scenarios
-  then run on it ([testing.md](testing.md), Torture suites).
+  with `@player_suite("myplayer")` and the features its build has; the
+  shared scenarios then run on it, with the card's dev folder from
+  `dev_dir` ([testing.md](testing.md), Torture suites).
 - **Nothing personal in code**: card UUIDs, Bluetooth addresses, backup image
   paths and tool paths come from `self.conf` (the `[targets.<name>]` table).
   Document each key in the class docstring with its default.

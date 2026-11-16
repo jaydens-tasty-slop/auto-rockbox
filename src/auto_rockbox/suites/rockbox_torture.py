@@ -13,7 +13,7 @@ setup): /codectest/ test files (`arb media-codectest`), /stress/ and
 and the codecs built with the core, a music library (artist/album folders;
 library scenarios skip without one), a built database, the cabbiev2 theme,
 /video/ videos (`arb media`'s video/), and tone.mp3 in the player's dev
-folder (`card_dir`, the build's DEV_CARD_DIR; `arb media-tone`: 1 kHz left,
+folder (`card_dir`, the target's dev_dir; `arb media-tone`: 1 kHz left,
 1.5 kHz right, 12 dB down after 10 s). The settings files the steps load
 (cfgs()) go into the dev folder before the run's first boot, with the player
 as USB mass storage (capability "storage"; put_card_files), unless the
@@ -28,9 +28,9 @@ drop over VIDEO_DROP_MAX of its pictures or lose its second core; with a
 charge limit, the charger must be off above it; a database build must end
 before the next step.
 
-What players differ in is declared by their subclass:
+What players differ in is declared by their subclass (the dev folder on the
+card by the target, Target.dev_dir):
 
-    card_dir       the dev folder on the card (DEV_CARD_DIR); required
     main_menu      the main menu's items in order (root_menu.c)
     slow_codecs    /codectest file name prefixes known too slow or over a limit
     expected_msgs  per scenario, the error messages it provokes on purpose
@@ -762,7 +762,6 @@ class RockboxTorture(TortureSuite):
     scenarios (with [bluetooth] sink and adapter); menu_coverage, the
     crawl's graph (default <paths.build>/menu-coverage-NAME.json)."""
 
-    card_dir: ClassVar[str]         # the build's DEV_CARD_DIR
     main_menu: ClassVar[tuple[str, ...]] = MAIN_MENU
     slow_codecs: ClassVar[tuple[str, ...]] = ()
     expected_msgs: ClassVar[Mapping[str, re.Pattern[str]]] = {}
@@ -802,6 +801,13 @@ class RockboxTorture(TortureSuite):
         self.warming = False            # prepare()'s screen visit (its Home may boot again)
 
     # ---- the card's dev folder
+
+    @property
+    def card_dir(self) -> str:
+        """The dev build's folder on the card (Target.dev_dir)"""
+        if not self.target.dev_dir:
+            raise TortureError(f"{self.target.name}: no dev_dir (the build's DEV_CARD_DIR)")
+        return self.target.dev_dir
 
     def card_path(self, name: str) -> str:
         return f"{self.card_dir}/{name}"
@@ -1726,8 +1732,7 @@ def linein_tone(t: RockboxTorture) -> str | None:
     """The wired output on this PC's Line In (`arb linein serve`): the tone
     file's two tones whole, at a steady level, that of earlier steps"""
     directory = linein.directory(t.target.ws)
-    latest = directory / "latest.json"
-    if not latest.exists() or time.time() - latest.stat().st_mtime > 5:
+    if not linein.running(directory):
         return t.skip("no Line In capture running (arb linein serve)")
     t.ready_to_play()
     t.sh("stop")                        # a sink switch under a playing track underruns
