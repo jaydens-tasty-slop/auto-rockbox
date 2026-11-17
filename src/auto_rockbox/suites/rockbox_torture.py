@@ -68,6 +68,7 @@ through a bluetoothctl agent.
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import itertools
 import json
 import re
@@ -95,7 +96,7 @@ from ..btpeer import analysis, have_bumble, pcsink
 from ..btpeer.options import HeadsetOptions, HidOptions
 from ..errors import ArbError
 from ..registry import Context, arg, command
-from ..shot import screenshot
+from ..shot import missing_runs, parse_rows, screenshot
 from ..target import RunRequest, Target
 from .torture import Health, Lost, Records, Register, TortureError, TortureSuite, scenario
 
@@ -212,6 +213,7 @@ VOLUME_STEPS = (3, 6, 10, 15)   # dB below VOLUME_DB the volume step plays the t
 VOLUME_TOL_DB = 1.0             # ...and how far the level's move may be off it
 FILL_COLOURS = ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255), (0, 0, 0),
                 (255, 255, 0), (0, 255, 255), (128, 64, 192))
+FILL_TRIES = 3                  # fills and reads again of the rows the UI redrew
 HANG_WAIT_S = 30                # the shell's wait on `hang` before the player counts as gone
 DAC_GAIN_DB = 1.0               # dac: gain at 1 kHz against the saved result
 DAC_FR_DB = 0.5                 # ...the response 50 Hz-15 kHz, re 1 kHz
@@ -1848,24 +1850,42 @@ def dac_problems(base: dict[str, Any], r: dict[str, Any]) -> list[str]:
 @rockbox_scenario("lcdfill", area="lcd", weight=2)
 def lcdfill(t: RockboxTorture) -> str | None:
     """`fill R G B`, then the framebuffer over the shell (`shot`): every
-    pixel that colour as the LCD driver keeps it; then Home redraws"""
+    pixel that colour as the LCD driver keeps it; then Home redraws. The UI
+    may redraw part of the screen (its status bar) before the read: rows
+    that differ are filled and read again at once, FILL_TRIES times"""
     colour = t.rng.choice(FILL_COLOURS)
+    want = np.array(rgb565(*colour), dtype=np.uint8)
+    lcd = t.target.lcd
     h = t.health()
     t.sh("fill {} {} {}".format(*colour))
     try:
-        im, missing = screenshot(lambda line: t.reply(line, 60), t.target.lcd)
+        im, missing = screenshot(lambda line: t.reply(line, 60), lcd)
     except ArbError as e:
         t.fail(f"no framebuffer: {e}")
         return None
     px = np.asarray(im)
-    rows = [y for y in range(px.shape[0]) if y not in set(missing)]
-    off = int(np.any(px[rows] != np.array(rgb565(*colour), dtype=np.uint8), axis=-1).sum())
+    bad = [y for y in range(lcd.height) if y not in set(missing) and np.any(px[y] != want)]
+    first = list(bad)
+    for _ in range(FILL_TRIES):
+        if not bad:
+            break
+        t.sh("fill {} {} {}".format(*colour))
+        rows: dict[int, list[bytes]] = {}
+        for a, b in missing_runs(bad):
+            parse_rows(t.reply(f"shot {a} {b}", 60).lines, rows)
+        one = dataclasses.replace(lcd, height=1)
+        bad = [y for y in bad if not any(
+            len(r) == 2 * lcd.width
+            and not np.any(np.asarray(fb.decode(r, one, big_endian=True)) != want)
+            for r in rows.get(y, []))]
     if missing:
         t.note(f"{len(missing)} rows not read")
-    if off:
+    if bad:
         png = t.step_file("fill", ".png")
         fb.scaled(im).save(png)
-        t.fail(f"{off} pixels not {colour} ({png.name})")
+        t.fail(f"rows {missing_runs(bad)} not {colour} after {FILL_TRIES + 1} fills ({png.name})")
+    elif first:
+        t.note(f"rows {missing_runs(first)} redrawn by the UI before the first read")
     t.home()
     t.check_health(h)
     return f"fill {colour}"
