@@ -114,6 +114,8 @@ CFGS = {
                    "lcd sleep after backlight off: 2\n",
     "t_wake.cfg": "backlight timeout: 15\nbacklight timeout plugged: 15\n"
                   "lcd sleep after backlight off: 5\n",
+    # lcdfill: the status bar's icons redraw over a fill within a second
+    "t_nobar.cfg": "statusbar: off\n",
     # English by name: the built-in one is "lang: " (no file), and a .cfg
     # with that keeps whatever language a crawl selected, so t_base.cfg's
     # restore left the menus in Chinese (TS17 torture 10). The main menu in
@@ -1852,14 +1854,16 @@ def dac_problems(base: dict[str, Any], r: dict[str, Any]) -> list[str]:
 
 @rockbox_scenario("lcdfill", area="lcd", weight=2)
 def lcdfill(t: RockboxTorture) -> str | None:
-    """`fill R G B`, then the framebuffer over the shell (`shot`): every
-    pixel that colour as the LCD driver keeps it; then Home redraws. The UI
-    may redraw part of the screen (its status bar) before the read: rows
-    that differ are filled and read again at once, FILL_TRIES times"""
+    """`fill R G B` with the status bar off, then the framebuffer over the
+    shell (`shot`): every pixel that colour as the LCD driver keeps it; then
+    the default look, and Home redraws. The UI may still redraw a part of
+    the screen before the read: rows that differ are filled and read again
+    at once, FILL_TRIES times"""
     colour = t.rng.choice(FILL_COLOURS)
     want = np.array(rgb565(*colour), dtype=np.uint8)
     lcd = t.target.lcd
     h = t.health()
+    t.sh(f"cfg {t.card_path('t_nobar.cfg')}")
     t.sh("fill {} {} {}".format(*colour))
     try:
         im, missing = screenshot(lambda line: t.reply(line, 60), lcd)
@@ -1889,6 +1893,7 @@ def lcdfill(t: RockboxTorture) -> str | None:
         t.fail(f"rows {missing_runs(bad)} not {colour} after {FILL_TRIES + 1} fills ({png.name})")
     elif first:
         t.note(f"rows {missing_runs(first)} redrawn by the UI before the first read")
+    t.sh(f"cfg {t.card_path('t_default.cfg')}")
     t.home()
     t.check_health(h)
     return f"fill {colour}"
