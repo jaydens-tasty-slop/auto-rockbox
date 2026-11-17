@@ -18,6 +18,7 @@ from auto_rockbox.suites import soak
 from auto_rockbox.suites.soak import SoakSuite
 from auto_rockbox.target import Lcd, RunRequest, Target
 from auto_rockbox.targets.ts17 import Ts17
+from auto_rockbox.targets.yp3 import Yp3
 from auto_rockbox.workspace import Workspace
 
 RETURN = "dev return: on time"
@@ -31,7 +32,7 @@ class LogPlayer(Target):
     summary = "the soak tests' player"
     lcd = Lcd(128, 160)
     key_letters = "UDLRS"
-    capabilities = frozenset({"storage"})
+    capabilities = frozenset({"storage", "usb-poweroff"})
     return_line = RETURN
     dev_dir = "/devdir"
 
@@ -62,14 +63,17 @@ def run(name: str, log: Callable[[RunRequest], str]) -> tuple[Outcome, LogPlayer
 
 
 def test_registered() -> None:
-    """Every player gets them (fsck with mass storage); the TS17's own boot,
-    tone and poweroff replace the generic ones"""
+    """Every player gets them (fsck with mass storage, poweroff with a build
+    that powers off on USB); the TS17's own boot, tone and poweroff replace
+    the generic ones"""
     ws = Workspace(Path("/nonexistent"))
     table = engine.scenarios_for(SoakSuite(LogPlayer(ws, str), Path("x.elf"), shots=False))
     assert set(table) == GENERIC
     with mock.patch.object(LogPlayer, "capabilities", frozenset()):
         table = engine.scenarios_for(SoakSuite(LogPlayer(ws, str), Path("x.elf"), shots=False))
-    assert set(table) == GENERIC - {"fsck"}
+    assert set(table) == GENERIC - {"fsck", "poweroff"}
+    yp3 = SoakSuite(Yp3(ws), Path("x.elf"), shots=False)
+    assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert {n for n, s in ts17.items() if s.targets is None} == {"crash", "sdtest", "fsck"}
     assert all(ts17[n].targets == {"ts17"} for n in ("boot", "tone", "poweroff"))

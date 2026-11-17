@@ -114,10 +114,12 @@ def crash(step: StepContext) -> Outcome:
                 allow=(CRASH,), ends_early=True).outcome
 
 
-@scenario("poweroff", suite="soak", area="power", weight=1)
+@scenario("poweroff", suite="soak", area="power", weight=1, needs={"usb-poweroff"})
 def poweroff(step: StepContext) -> Outcome:
     """A power-off as the menu's (poweroff=, dry): the shutdown runs to its
-    end and the player returns to the host instead of switching off"""
+    end and the player returns to the host instead of switching off. Only
+    a build that powers off on a charger can do it on the bench (Rockbox's
+    default shows the charging splash instead)"""
     return boot(step, 60, settings={"poweroff": "1"}, expect=POWEROFF, ends_early=True).outcome
 
 

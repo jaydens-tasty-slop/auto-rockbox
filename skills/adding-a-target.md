@@ -112,8 +112,11 @@ the workspace's `[plugins] modules`.
 - **Capabilities** switch generic commands on: `framebuffer`
   (`read_framebuffer`), `shell` (`shell()`), `battery` (`battery()` plus a
   charger guard in `before_run`/`after_run`), `cold` (boots through the
-  normal boot chain), `usb` (`RunRequest.usb` starts the dev shell), and
-  `storage` (`mass_storage()` yields the card's block device).
+  normal boot chain), `usb` (`RunRequest.usb` starts the dev shell),
+  `storage` (`mass_storage()` yields the card's block device), and
+  `usb-poweroff` (the build powers off with USB attached,
+  HAVE_POWEROFF_WHILE_CHARGING: the soak's power-off test can run on the
+  bench).
 - **Player-only commands**: `@command("nor", help=..., target={"myplayer"})`
   in the subpackage's `commands.py`. A player command of the same name as a
   generic one replaces it for that player (the YP3's `run` adds `--push` and
