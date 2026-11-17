@@ -105,16 +105,21 @@ class Shell:
     def _talk(self, fd: int, line: str, timeout: float,
               echo: Callable[[str], None] | None) -> Reply:
         # Output left from an earlier command (one that timed out) stays
-        # queued in the player until read: its "ok" would end this reply
+        # queued in the player until read: its "ok" would end this reply. An
+        # empty read is a port that hung up (the player left): no reply comes,
+        # and select() would keep calling it readable
         while select.select([fd], [], [], 0.3)[0]:
-            os.read(fd, 4096)
+            if not os.read(fd, 4096):
+                return Reply(False, timed_out=True)
         os.write(fd, line.encode() + b"\n")
         reply = Reply(False)
         buf, end = b"", time.monotonic() + timeout
         while time.monotonic() < end:
             if not select.select([fd], [], [], 0.2)[0]:
                 continue
-            buf += os.read(fd, 4096)
+            if not (data := os.read(fd, 4096)):
+                break
+            buf += data
             *done, buf = buf.split(b"\n")
             for raw in done:
                 text = raw.decode(errors="replace")

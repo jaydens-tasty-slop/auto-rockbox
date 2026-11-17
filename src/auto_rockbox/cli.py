@@ -9,8 +9,12 @@
 from __future__ import annotations
 
 import argparse
+import faulthandler
+import io
 import os
+import signal
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 from . import registry
@@ -59,6 +63,9 @@ def parser(ws: Workspace) -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    # `kill -USR1 PID` prints where a stuck run is, every thread, and goes on
+    with suppress(io.UnsupportedOperation):         # stderr is no file (tests)
+        faulthandler.register(signal.SIGUSR1, all_threads=True)
     # --workspace must be known before plugins load: they come from it
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--workspace", type=Path)
