@@ -193,6 +193,23 @@ declares what differs:
   `gate_on()`, `fm_tune()`, `bt_fail_details()`, and the crash records
   (`records()`, `wait_host()`, `expected_return()`).
 
+Shared torture tests that need set-up on this PC:
+
+- `linein` and `volume` need `arb linein serve`, the tone in the dev
+  folder, and the output wired to Line In at unity gain. `linein` also
+  counts sample slips (clicks) in the tone's loud part; `volume` plays it
+  at two volumes and checks the level moves by the step.
+- `dac` plays the audio test signal at the volume of a saved analysis of
+  the same player on the same bench, and holds the new analysis against
+  it (gain, response, THD+N, noise, crosstalk, polarity). It is skipped
+  without `[targets.NAME.dac]`: `signal` (card path), `timeline`,
+  `baseline` (a `result.json` of `arb audio analyze`), `volume`.
+- `hang` spins the shell's thread; the recovery watchdog must bring the
+  player back by itself (`expect_return` makes that return no failure).
+
+A torture run ends with the card's filesystem check over USB mass storage
+(`--no-fsck` leaves it out); its verdict goes into report.md.
+
 A scenario that needs commands only one player's shell has (the YP3's `fm`,
 `fmregs`, `fmmon`) registers in that player's module with `target={"NAME"}`.
 New shared scenarios go in `suites/rockbox_torture.py` (`rockbox_scenario`,
