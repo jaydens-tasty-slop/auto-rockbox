@@ -68,6 +68,7 @@ through a bluetoothctl agent.
 from __future__ import annotations
 
 import calendar
+import itertools
 import json
 import re
 import subprocess
@@ -82,7 +83,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
+import numpy as np
+
 from .. import card, engine, fb, linein, media
+from ..audioq import analyze, signal
+from ..audioq import slips as slip_finder
+from ..audioq.audiofile import load_capture
+from ..audioq.dsp import arr
 from ..bt import bluez
 from ..btpeer import analysis, have_bumble, pcsink
 from ..btpeer.options import HeadsetOptions, HidOptions
@@ -200,6 +207,17 @@ DECODE_FRAMES = 200000          # a track's hash covers its first this many fram
 LINEIN_STEADY_DB = 1.0          # the tone's level within a step
 LINEIN_DB = 2.0                 # ...and against earlier steps
 LINEIN_ONSET_S = 6              # the tone is heard within this of the play command
+SLIP_MIN_S = 4                  # whole tone seconds in a row a slip check needs
+VOLUME_STEPS = (3, 6, 10, 15)   # dB below VOLUME_DB the volume step plays the tone at
+VOLUME_TOL_DB = 1.0             # ...and how far the level's move may be off it
+FILL_COLOURS = ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255), (0, 0, 0),
+                (255, 255, 0), (0, 255, 255), (128, 64, 192))
+HANG_WAIT_S = 30                # the shell's wait on `hang` before the player counts as gone
+DAC_GAIN_DB = 1.0               # dac: gain at 1 kHz against the saved result
+DAC_FR_DB = 0.5                 # ...the response 50 Hz-15 kHz, re 1 kHz
+DAC_WORSE_DB = 3.0              # ...THD+N at -20..-6 dBFS, noise (A), crosstalk: no worse by more
+DAC_THDN_STEPS = (-20.0, -10.0, -6.0)
+DAC_FR_BAND = (50.0, 15000.0)
 FOLDER_BUDGET_S = 3             # next/previous folder plays within this
 FOLDER_WAIT_S = 20              # ...and is waited for this long
 RTC_EVERY_S = 600               # the player's clock read every ~10 min
@@ -1193,6 +1211,55 @@ class RockboxTorture(TortureSuite):
         elif self.health().num("act") in (ACT_RECORDING, ACT_FM):
             self.home()
 
+    @contextmanager
+    def wired(self) -> Generator[None]:
+        """Playback stopped and the output on the player's own (wired) sink
+        for the block, then back on Bluetooth if it was there"""
+        self.ready_to_play()
+        self.sh("stop")                 # a sink switch under a playing track underruns
+        bt = parse_bt_status(self.sh("bt stack status"))
+        if bt is not None and bt.status == BT_ON and self.pc and not self.bt_off:
+            # after a boot (ready_to_play's): the auto-connect's audio link would
+            # take the output mid-tone
+            _, took = self.bt_wait(lambda s: s.status >= BT_CONNECTED, BT_CONNECT_S)
+            if took is not None:
+                time.sleep(BT_SETTLE_S)
+                bt = parse_bt_status(self.sh("bt stack status"))
+        to_bt = bt is not None and bt.sink == SINK_BT
+        if to_bt:
+            self.sh("bt stack sink builtin")
+        yield
+        self.sh("stop")
+        if to_bt:
+            self.sh("bt stack sink bt")
+
+    def play_tone(self, vol: int) -> TonePlay | None:
+        """The tone file at VOL dB (inside wired()), its loud part as Line In
+        heard it; None, the failure recorded, when it did not start"""
+        self.sh(f"vol {vol}")           # skips, monkey and AVRCP move it
+        since = datetime.now(UTC)
+        self.sh(f"play {self.tone}")
+        time.sleep(1.5)
+        s0, t1 = self.playing(), time.monotonic()
+        if s0.path != self.tone:
+            self.sh("stop")
+            self.fail(f"the tone did not start (audio {s0.audio}, playing {s0.path})")
+            return None
+        # its -15 dBFS part lasts 10 s; no shell traffic meanwhile (long replies
+        # slip DAC samples)
+        time.sleep(10.5)
+        s1 = self.playing()
+        advance = f"playback advanced {(s1.elapsed - s0.elapsed) / 1000:.1f} s in " \
+                  f"{time.monotonic() - t1:.1f} s"
+        sink = parse_bt_status(self.sh("bt stack status"))
+        until = datetime.now(UTC)
+        time.sleep(linein.LAG_S + 1.5)  # the capture publishes each second after it
+        tc = linein.tone_check(linein.directory(self.target.ws), since, until, need=5, span=8)
+        self.sh("stop")
+        onset = None if not tc.tone else (tc.tone[0].second.published - since
+                                          - timedelta(seconds=linein.LAG_S)).total_seconds()
+        return TonePlay(tc, advance, onset, None if sink is None else sink.sink)
+
     def ui_idle(self, limit: float = 90) -> None:
         """Waits while the UI thread misses its 10 s ping (e.g. a free-space
         rescan, ~35 s on a 32 GB card): keys meanwhile are lost"""
@@ -1684,6 +1751,179 @@ def rockbox_scenario(name: str, *, area: str, weight: int, needs: Iterable[str] 
     return scenario(name, area=area, weight=weight, needs={ROCKBOX, *needs})
 
 
+# ---------------------------------------------------------------- Line In, LCD
+
+@dataclass(frozen=True)
+class TonePlay:
+    """One play of the tone's loud part (RockboxTorture.play_tone)"""
+
+    check: linein.ToneCheck
+    advance: str                # playback's progress against the wall clock
+    onset: float | None         # s from the play command to the first tone second
+    sink: int | None            # the output sink at its end (`bt stack status`)
+
+    @property
+    def levels(self) -> list[float]:
+        """The left channel's level in its whole seconds"""
+        return [x.channels[0].db for x in self.check.tone[1:8]]
+
+    @property
+    def level(self) -> float | None:
+        lv = sorted(self.levels)
+        return lv[len(lv) // 2] if lv else None
+
+    def problems(self) -> list[str]:
+        bad = list(self.check.problems)
+        if self.sink is not None and self.sink != SINK_BUILTIN:
+            bad.append(f"output moved off the built-in sink (sink {self.sink})")
+        if self.onset is not None and self.onset > LINEIN_ONSET_S:
+            bad.append(f"the tone started {self.onset:.0f} s after the play command")
+        if self.levels and max(self.levels) - min(self.levels) > LINEIN_STEADY_DB:
+            bad.append(f"level moved {min(self.levels):.1f}..{max(self.levels):.1f} dBFS")
+        return bad
+
+
+def tone_slips(heard: list[linein.Heard]) -> list[str]:
+    """Whole-sample slips (clicks) in the 1 kHz tone over HEARD, Line In
+    seconds in a row (`arb audio slips`); none checked if they are not"""
+    seconds = [h.second for h in heard]
+    if len(seconds) < SLIP_MIN_S or any(b.seq != a.seq + 1 for a, b in itertools.pairwise(seconds)):
+        return []
+    x, fs = load_capture(seconds)
+    try:
+        found = slip_finder.find(x[:, 0], fs, TONE_HZ[0])
+    except (IndexError, ValueError):
+        return []
+    return [f"slip {v:+.2f} samples, {at:.2f} s into Line In second {seconds[0]}"
+            for at, v in found.events]
+
+
+def rgb565(r: int, g: int, b: int) -> tuple[int, int, int]:
+    """R, G, B as an RGB565 framebuffer keeps it, read back as fb.decode does"""
+    px = (r >> 3) << 11 | (g >> 2) << 5 | b >> 3
+    return (px >> 11) * 255 // 31, (px >> 5 & 63) * 255 // 63, (px & 31) * 255 // 31
+
+
+def dac_problems(base: dict[str, Any], r: dict[str, Any]) -> list[str]:
+    """Analysis R of the audio test signal against the saved BASE of the same
+    player and volume: polarity, gain, response, THD+N, noise, crosstalk"""
+    out = []
+    if r["polarity"] != base["polarity"]:
+        out.append(f"polarity {r['polarity']}, saved {base['polarity']}")
+    for i, c in enumerate("LR"):
+        g, g0 = r["gain_1k"][i], base["gain_1k"][i]
+        if abs(g - g0) > DAC_GAIN_DB:
+            out.append(f"{c} gain {g:.2f} dB, saved {g0:.2f}")
+        n, n0 = r["noise"][i]["aw"], base["noise"][i]["aw"]
+        if n > n0 + DAC_WORSE_DB:
+            out.append(f"{c} noise {n:.1f} dBFS(A), saved {n0:.1f}")
+    lo, hi = DAC_FR_BAND
+    band = [i for i, f in enumerate(r["grid"]) if lo <= f <= hi]
+    for c, o in (("L", "R"), ("R", "L")):
+        def curves(res: dict[str, Any], c: str = c, o: str = o) -> tuple[np.ndarray, np.ndarray]:
+            sw = res["sweeps"]["12"][c]
+            fr = arr(sw[c]["fr"])
+            return fr - analyze.at(res, fr, 1000), arr(sw[o]["fr"]) - fr
+        fr, xt = curves(r)
+        fr0, xt0 = curves(base)
+        dev = np.abs(fr - fr0)[band]
+        if np.any(dev > DAC_FR_DB):
+            i = band[int(np.nanargmax(dev))]
+            out.append(f"{c} response {fr[i]:+.2f} dB at {r['grid'][i]:.0f} Hz, "
+                       f"saved {fr0[i]:+.2f}")
+        for f in (1000, 10000):
+            x, x0 = analyze.at(r, xt, f), analyze.at(base, xt0, f)
+            if x > x0 + DAC_WORSE_DB:
+                out.append(f"crosstalk {c}->{o} {x:.0f} dB at {f} Hz, saved {x0:.0f}")
+    steps = {s["dbfs_in"]: s for s in base["steps"]}
+    for s in r["steps"]:
+        if s["dbfs_in"] in DAC_THDN_STEPS and s["dbfs_in"] in steps:
+            for c, ch, ch0 in zip("LR", s["ch"], steps[s["dbfs_in"]]["ch"], strict=True):
+                if ch["thdn"] > ch0["thdn"] + DAC_WORSE_DB:
+                    out.append(f"{c} THD+N {ch['thdn']:.1f} dB at {s['dbfs_in']:g} dBFS in, "
+                               f"saved {ch0['thdn']:.1f}")
+    return out
+
+
+@rockbox_scenario("lcdfill", area="lcd", weight=2)
+def lcdfill(t: RockboxTorture) -> str | None:
+    """`fill R G B`, then the framebuffer over the shell (`shot`): every
+    pixel that colour as the LCD driver keeps it; then Home redraws"""
+    colour = t.rng.choice(FILL_COLOURS)
+    h = t.health()
+    t.sh("fill {} {} {}".format(*colour))
+    try:
+        im, missing = screenshot(lambda line: t.reply(line, 60), t.target.lcd)
+    except ArbError as e:
+        t.fail(f"no framebuffer: {e}")
+        return None
+    px = np.asarray(im)
+    rows = [y for y in range(px.shape[0]) if y not in set(missing)]
+    off = int(np.any(px[rows] != np.array(rgb565(*colour), dtype=np.uint8), axis=-1).sum())
+    if missing:
+        t.note(f"{len(missing)} rows not read")
+    if off:
+        png = t.step_file("fill", ".png")
+        fb.scaled(im).save(png)
+        t.fail(f"{off} pixels not {colour} ({png.name})")
+    t.home()
+    t.check_health(h)
+    return f"fill {colour}"
+
+
+@rockbox_scenario("hang", area="boot", weight=1)
+def hang(t: RockboxTorture) -> str | None:
+    """`hang` (half the time with IRQs off): the shell's thread spins until
+    the recovery watchdog sends the player back to the host by itself, and
+    the log it leaves names the hang"""
+    cmd = "hang irq" if t.rng.random() < 0.5 else "hang"
+    t.expect_return("spinning", f"{cmd}: back by the watchdog (expected)")
+    t.sh(cmd, timeout=HANG_WAIT_S)
+    t.fail(f"`{cmd}` answered: the shell did not spin")
+    return cmd
+
+
+@rockbox_scenario("dac", area="audio", weight=1)
+def dac(t: RockboxTorture) -> str | None:
+    """The audio test signal (`arb audio signal`) at the volume of a saved
+    analysis of this player, on this bench ([targets.NAME.dac]), analysed
+    off Line In and held against it (dac_problems)"""
+    conf = t.target.ws.section("targets", t.target.name, "dac")
+    if not conf.data:
+        return t.skip(f"no [targets.{t.target.name}.dac] (signal, timeline, baseline, volume)")
+    directory = linein.directory(t.target.ws)
+    if not linein.running(directory):
+        return t.skip("no Line In capture running (arb linein serve)")
+    tl = signal.load_timeline(conf.path("timeline"))
+    base = json.loads(conf.path("baseline").read_text())
+    path, vol = conf.string("signal"), conf.integer("volume")
+    with t.wired():
+        h = t.health()
+        t.sh(f"vol {vol}")
+        since = datetime.now(UTC)
+        t.sh(f"play {path}")
+        time.sleep(3)
+        if (s0 := t.playing()).path != path:
+            t.fail(f"the signal did not start (audio {s0.audio}, playing {s0.path})")
+            return None
+        time.sleep(tl.total)            # no shell traffic meanwhile
+        until = datetime.now(UTC)
+        time.sleep(linein.LAG_S + 1.5)
+    lag = timedelta(seconds=linein.LAG_S)
+    x, fs = load_capture(linein.between(linein.history(directory), since + lag, until + lag))
+    try:
+        r = analyze.analyse(x, fs, tl, t.step.name)
+    except (IndexError, ValueError, KeyError) as e:
+        t.fail(f"no analysis of the capture: {e!r}")
+        return None
+    t.step_file("result", ".json").write_text(json.dumps(r))
+    t.transcript += ["", analyze.report(r)]
+    if bad := dac_problems(base, r):
+        t.fail("; ".join(bad[:5]) + (f" (+{len(bad) - 5})" if len(bad) > 5 else ""))
+    t.check_health(h)
+    return f"gain {r['gain_1k'][0]:.2f}/{r['gain_1k'][1]:.2f} dB at {vol} dB"
+
+
 # ---------------------------------------------------------------- playback scenarios
 
 @rockbox_scenario("codecs", area="playback", weight=12)
@@ -1730,73 +1970,59 @@ def decode(t: RockboxTorture) -> str | None:
 @rockbox_scenario("linein", area="audio", weight=4)
 def linein_tone(t: RockboxTorture) -> str | None:
     """The wired output on this PC's Line In (`arb linein serve`): the tone
-    file's two tones whole, at a steady level, that of earlier steps"""
-    directory = linein.directory(t.target.ws)
-    if not linein.running(directory):
+    file's two tones whole, at a steady level, that of earlier steps, and
+    no sample slips (clicks) in its loud part"""
+    if not linein.running(linein.directory(t.target.ws)):
         return t.skip("no Line In capture running (arb linein serve)")
-    t.ready_to_play()
-    t.sh("stop")                        # a sink switch under a playing track underruns
-    bt = parse_bt_status(t.sh("bt stack status"))
-    if bt is not None and bt.status == BT_ON and t.pc and not t.bt_off:
-        # after a boot (ready_to_play's): the auto-connect's audio link would
-        # take the output mid-tone
-        _, took = t.bt_wait(lambda s: s.status >= BT_CONNECTED, BT_CONNECT_S)
-        if took is not None:
-            time.sleep(BT_SETTLE_S)
-            bt = parse_bt_status(t.sh("bt stack status"))
-    to_bt = bt is not None and bt.sink == SINK_BT
-    if to_bt:
-        t.sh("bt stack sink builtin")
-    t.sh(f"vol {VOLUME_DB}")            # skips, monkey and AVRCP move it
-    h = t.health()
-    since = datetime.now(UTC)
-    t.sh(f"play {t.tone}")
-    time.sleep(1.5)
-    s0, t1 = t.playing(), time.monotonic()
-    if s0.path != t.tone:
-        t.sh("stop")
-        if to_bt:
-            t.sh("bt stack sink bt")
-        t.fail(f"the tone did not start (audio {s0.audio}, playing {s0.path})")
+    with t.wired():
+        h = t.health()
+        tp = t.play_tone(VOLUME_DB)
+    if tp is None:
         return None
-    # its -15 dBFS part lasts 10 s; no shell traffic meanwhile (long replies
-    # slip DAC samples)
-    time.sleep(10.5)
-    s1 = t.playing()
-    advance = f"playback advanced {(s1.elapsed - s0.elapsed) / 1000:.1f} s in " \
-              f"{time.monotonic() - t1:.1f} s"
-    sink = parse_bt_status(t.sh("bt stack status"))
-    until = datetime.now(UTC)
-    time.sleep(linein.LAG_S + 1.5)      # the capture publishes each second after it
-    tc = linein.tone_check(directory, since, until, need=5, span=8)
-    t.sh("stop")
-    if to_bt:
-        t.sh("bt stack sink bt")
-    bad = list(tc.problems)
-    if sink and sink.sink != SINK_BUILTIN:
-        bad.append(f"output moved off the built-in sink (sink {sink.sink})")
-    note = tc.note
-    if tc.tone:
-        onset = (tc.tone[0].second.published - since
-                 - timedelta(seconds=linein.LAG_S)).total_seconds()
-        if onset > LINEIN_ONSET_S:
-            bad.append(f"the tone started {onset:.0f} s after the play command")
-    levels = [x.channels[0].db for x in tc.tone[1:8]]   # whole seconds of its first 10 s
-    if levels:
-        mid = sorted(levels)[len(levels) // 2]
-        note += f" at {mid:.1f} dBFS"
-        if max(levels) - min(levels) > LINEIN_STEADY_DB:
-            bad.append(f"level moved {min(levels):.1f}..{max(levels):.1f} dBFS")
+    bad = tp.problems()
+    note = tp.check.note
+    if tp.level is not None:
+        note += f" at {tp.level:.1f} dBFS"
         if t.linein_db:
             ref = sorted(t.linein_db)[len(t.linein_db) // 2]
-            if abs(mid - ref) > LINEIN_DB:
-                bad.append(f"level {mid:.1f} dBFS, earlier steps {ref:.1f}")
-        t.linein_db.append(mid)
-    t.transcript += ["", "Line In:", tc.report()]
+            if abs(tp.level - ref) > LINEIN_DB:
+                bad.append(f"level {tp.level:.1f} dBFS, earlier steps {ref:.1f}")
+        t.linein_db.append(tp.level)
+    slipped = tone_slips(tp.check.tone[1:9])
+    bad += slipped
+    t.transcript += ["", "Line In:", tp.check.report(), *slipped]
     if bad:
-        t.fail(f"{advance}; " + "; ".join(bad[:4]))
+        t.fail(f"{tp.advance}; " + "; ".join(bad[:4]))
     t.check_health(h)
     return note
+
+
+@rockbox_scenario("volume", area="audio", weight=2)
+def volume(t: RockboxTorture) -> str | None:
+    """The tone's loud part on Line In at VOLUME_DB and a random step below:
+    the level moves by the step (the port's volume table, as heard)"""
+    if not linein.running(linein.directory(t.target.ws)):
+        return t.skip("no Line In capture running (arb linein serve)")
+    down = t.rng.choice(VOLUME_STEPS)
+    with t.wired():
+        h = t.health()
+        plays = [t.play_tone(VOLUME_DB), t.play_tone(VOLUME_DB - down)]
+    what = f"{VOLUME_DB} and {VOLUME_DB - down} dB"
+    if not all(plays):
+        return what
+    a, b = (tp for tp in plays if tp)
+    t.transcript += ["", "Line In:", a.check.report(), b.check.report()]
+    if bad := a.problems() + b.problems():
+        t.fail("; ".join(bad[:4]))
+    elif a.level is None or b.level is None:
+        t.fail("no level read")
+    elif abs(a.level - b.level - down) > VOLUME_TOL_DB:
+        t.fail(f"{down} dB down moved the level {a.level - b.level:.1f} dB "
+               f"({a.level:.1f} -> {b.level:.1f} dBFS)")
+    t.check_health(h)
+    if a.level is None or b.level is None:
+        return what
+    return f"{what}: {a.level:.1f} -> {b.level:.1f} dBFS"
 
 
 @rockbox_scenario("video", area="playback", weight=4)

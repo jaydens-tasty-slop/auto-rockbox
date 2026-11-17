@@ -65,7 +65,7 @@ from pathlib import Path
 from random import Random
 from typing import ClassVar, cast
 
-from .. import attention, engine
+from .. import attention, card, engine
 from ..engine import Outcome, StepContext, Suite
 from ..errors import ArbError, UsageError
 from ..lock import DeviceLock
@@ -82,6 +82,7 @@ LOG_TAIL = 120              # dev log lines a crash report keeps
 RETURN_WAIT_S = 60          # a crashed or hung player comes back by itself within this
 ASK_WAIT_S = 240            # ...one asked to (`!rom`) within this
 HOST_WAIT_S = 900           # before a boot, how long the player may take to reach the host
+CARD_CHECK_S = 180          # the card's time on this PC for the check after a run
 SHELL_WAIT_S = 600          # the dev shell is up within this after a launch
 MIRROR_READ_S = 0.5        # the log mirror's reads; it stops within one
 LEDGER_HEAD = "run,hours,steps,failures,crashes,seed,scenarios"
@@ -238,10 +239,13 @@ class TortureSuite(Suite):
 
     def __init__(self, target: Target, image: Path, *, boot: bool = True,
                  after_boot: Iterable[str] = (), ledger: Path | None = None,
-                 seed: int = 0) -> None:
+                 seed: int = 0, fsck: bool = True) -> None:
         super().__init__(target)
         self.image = image
         self.do_boot = boot
+        self.fsck = fsck and target.has("storage")
+        self.card_verdict = ""                  # the card check after the run
+        self.gone = False                       # the player was lost for good
         self.after_boot = list(after_boot)
         self.ledger = ledger
         self.seed = seed
@@ -265,6 +269,7 @@ class TortureSuite(Suite):
         self.notes: list[str] = []
         self.transcript: list[str] = []
         self.skipped = False
+        self.expecting: tuple[str, str] | None = None
 
     # ---- the run
 
@@ -288,6 +293,9 @@ class TortureSuite(Suite):
     def finish(self, out: Path, steps: list[engine.Step]) -> None:
         with suppress(Lost, ArbError):
             self.wrap_up()
+        if self.fsck and not self.gone:
+            self.card_verdict = self.card_check()
+            print(self.card_verdict)
         self.write_report()
         print(f"report: {self.out / 'report.md'}")
 
@@ -300,16 +308,31 @@ class TortureSuite(Suite):
                 self.crashes, self.seed, " ".join(sorted(self.tally))))
             print(f"ledger: {self.ledger}")
         self.release()
+        self.unlock()
+
+    def unlock(self) -> None:
         if self._lock:
             self._lock.__exit__(None, None, None)
             self._lock = None
+
+    def card_check(self) -> str:
+        """The card's filesystem check after the run, over USB mass storage
+        (the run's device lock let go for it): its verdict for the report"""
+        self.back_to_host(ASK_WAIT_S)
+        self.unlock()
+        try:
+            with self.target.mass_storage(CARD_CHECK_S, self.image) as dev:
+                clean = card.check(dev)
+        except ArbError as e:
+            return f"card check: none ({e})"
+        return f"card check after the run: {card.describe_check(clean)}"
 
     def run_step(self, ctx: StepContext, body: Callable[[], str | None]) -> Outcome:
         """One scenario: BODY's note, the problems it recorded, its commands
         and replies; a lost player collected"""
         self._step, self.rng = ctx, ctx.rng
         self.problems, self.notes, self.transcript = [], [], []
-        self.skipped = False
+        self.skipped, self.expecting = False, None
         try:
             note = body() or ""
         except Lost as e:
@@ -356,6 +379,7 @@ class TortureSuite(Suite):
             with suppress(OSError):
                 attention.ring(attention.settings(self.target.ws)[0],
                                f"torture: the {self.target.name} needs a hand: {e}")
+            self.gone = True
             return False
         return True
 
@@ -383,6 +407,11 @@ class TortureSuite(Suite):
 
     def note(self, text: str) -> None:
         self.notes.append(text)
+
+    def expect_return(self, line: str, why: str) -> None:
+        """The step sends the player back to the host on purpose: a return
+        whose records hold LINE is no failure, and WHY names it"""
+        self.expecting = (line, why)
 
     def skip(self, why: str) -> str:
         """The step's note when it had nothing to test: `return t.skip(why)`"""
@@ -538,6 +567,8 @@ class TortureSuite(Suite):
         else:
             records = [("records", "none: the player did not come back to the host")]
         expected = self.expected_return(records) if home else None
+        if home and self.expecting and any(self.expecting[0] in b for _, b in records):
+            expected = self.expecting[1]
         n = self.crashes + self.returns + 1
         path = self.out / f"crash-{n}.txt"
         kind = self.crash_kind(records)
@@ -631,7 +662,8 @@ class TortureSuite(Suite):
                  "| scenario | steps | failed |", "|---|---|---|"]
         lines += [f"| {k} | {n} | {f} |" for k, (n, f) in sorted(self.tally.items())]
         lines += self.report_lines()
-        lines += ["", "Failures: steps.jsonl and NNN-name.txt; crashes: crash-N.txt"]
+        lines += [""] + ([self.card_verdict, ""] if self.card_verdict else [])
+        lines += ["Failures: steps.jsonl and NNN-name.txt; crashes: crash-N.txt"]
         (self.out / "report.md").write_text("\n".join(lines) + "\n")
 
 
@@ -695,6 +727,8 @@ def scenario(name: str, *, area: str, weight: int = 1, target: Iterable[str] | N
                       '(repeatable)'),
              arg("--ledger", type=Path, help="CSV the run's line goes to (default: [torture] "
                  "ledger; none: no line)"),
+             arg("--no-fsck", action="store_true",
+                 help="no card check (USB mass storage) after the run"),
          ])
 def torture_cmd(ctx: Context, args: Namespace) -> int:
     """Boots IMAGE with USB on (unless --no-boot) and runs weighted random
@@ -708,7 +742,8 @@ def torture_cmd(ctx: Context, args: Namespace) -> int:
     ledger = (None if args.ledger == Path("none")
               else args.ledger or ctx.ws.section("torture").opt_path("ledger"))
     s = suite_class(ctx.t.name)(ctx.t, args.image, boot=not args.no_boot,
-                                after_boot=args.after_boot, ledger=ledger, seed=seed)
+                                after_boot=args.after_boot, ledger=ledger, seed=seed,
+                                fsck=not args.no_fsck)
     try:
         steps = engine.run(s, engine.RunSettings(
             args.out, engine.deadline(args.hours, args.until), seed,

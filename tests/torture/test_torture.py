@@ -8,6 +8,7 @@ RockboxTorture's defaults. No device is touched; sleeps take no time."""
 from __future__ import annotations
 
 import importlib.util
+import json
 import random
 import re
 import tempfile
@@ -48,7 +49,8 @@ SHARED_WEIGHTS = {"codecs": 12, "skips": 6, "plugins": 6, "fs": 4, "db": 4, "usb
                   "pluginsweep": 0, "monkey": 8, "menus": 6, "dbdeep": 4, "crawl": 16, "recui": 4,
                   "fmui": 4,
                   "longplay": 4, "record": 8, "sdodd": 4, "meta": 4, "theme": 4, "codecmix": 8,
-                  "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "video": 4, "missing": 2}
+                  "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "video": 4, "missing": 2,
+                  "volume": 2, "lcdfill": 2, "hang": 1, "dac": 1}
 FEATURE_WEIGHTS = {"sleep": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,
               "bt-rate": 2, "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
@@ -844,3 +846,29 @@ def test_linein_waits_out_the_auto_connect() -> None:
         cmds = p.dev.sent[sent:]
         play = next(i for i, x in enumerate(cmds) if x.startswith("play"))
         assert "bt stack sink builtin" in cmds[:play] and "bt stack sink bt" in cmds[play:]
+
+
+def test_rgb565() -> None:
+    assert rt.rgb565(255, 255, 255) == (255, 255, 255)
+    assert rt.rgb565(0, 0, 0) == (0, 0, 0)
+    assert rt.rgb565(128, 64, 192) == (131, 64, 197)     # 5/6/5 bits, scaled back up
+
+
+def test_dac_problems() -> None:
+    """A saved analysis against itself passes; a gain, response, distortion
+    or polarity change beyond its margin fails"""
+    path = PORT / "build/audio_tune/ours_c0_usbnochg/result.json"
+    if not path.exists():
+        raise Skip(f"no {path}")
+    base = json.loads(path.read_text())
+    assert rt.dac_problems(base, base) == []
+    r = json.loads(path.read_text())
+    r["gain_1k"][0] -= 1.5
+    r["polarity"] = [1, 1]
+    r["steps"][2]["ch"][1]["thdn"] += 4
+    fr = r["sweeps"]["12"]["L"]["L"]["fr"]
+    i = min(range(len(r["grid"])), key=lambda k: abs(r["grid"][k] - 8000))
+    fr[i] = fr[i] - 0.8
+    got = rt.dac_problems(base, r)
+    assert [p.split(" ")[0] for p in got] == ["polarity", "L", "L", "R"], got
+    assert "response" in got[2] and "THD+N" in got[3]

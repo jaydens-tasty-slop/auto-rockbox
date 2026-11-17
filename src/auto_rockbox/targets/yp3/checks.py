@@ -194,8 +194,8 @@ def booted(t: Yp3, checks: Checks, steps: Iterable[str], elf: Path,
          ])
 def checks_cmd(ctx: Context, args: Namespace) -> int:
     """Uses the running dev build's serial shell, or boots one (and returns
-    the player to ROM USB afterwards). Prints each step's outcome; the exit
-    status is 0 whatever they are."""
+    the player to ROM USB afterwards). Prints each step's outcome; exit
+    status 1 if any failed."""
     t = ctx.t
     if not isinstance(t, Yp3):
         raise TypeError(f"{t.name}: not a YP3")
@@ -207,4 +207,4 @@ def checks_cmd(ctx: Context, args: Namespace) -> int:
     else:
         results = booted(t, checks, steps, args.elf or t.default_elf, args.seconds)
     print("\nresults: " + ", ".join(f"{s}={'ok' if ok else 'FAIL'}" for s, ok in results.items()))
-    return 0
+    return 0 if all(results.values()) else 1
