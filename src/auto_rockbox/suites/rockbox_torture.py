@@ -227,6 +227,9 @@ RTC_SLACK_S = 2.0               # `date`'s whole seconds and the shell's round t
 RTC_PPM = 100                   # drift allowed, ~8.6 s a day
 RTC_JUMP_S = 30                 # a change this big between readings was a clock set
 RTC_SET_S = 60                  # the start sets a clock this far from this PC's
+RTC_RATE_S = 120                # rtc: the clock read twice this far apart...
+RTC_RATE_SLACK_S = 3.0          # ...gains no more on this PC's (`date`: whole seconds,
+                                # the RTC read once a second)
 DATE_LINE = re.compile(r"(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d) wday")
 # Keys (`keys`): + held 1 s, * held 1.2 s from the live key state; UL = Home
 MONKEY_KEYS = ["U", "D", "L", "R", "S", "U+", "D+", "L+", "R+", "S+", "100", "400"]
@@ -1889,6 +1892,25 @@ def lcdfill(t: RockboxTorture) -> str | None:
     t.home()
     t.check_health(h)
     return f"fill {colour}"
+
+
+@rockbox_scenario("rtc", area="rtc", weight=1)
+def rtc(t: RockboxTorture) -> str | None:
+    """The player's clock (`date`) read twice RTC_RATE_S apart counts the
+    seconds this PC does: a wrong oscillator rate shows within minutes
+    (ClockWatch follows slow drift over a whole run)"""
+    a, t0 = t.clock_offset(), time.monotonic()
+    if a is None:
+        return t.skip("no clock (`date`)")
+    time.sleep(RTC_RATE_S)
+    b, secs = t.clock_offset(), time.monotonic() - t0
+    if b is None:
+        t.fail("`date` stopped answering")
+        return None
+    gained = b - a
+    if abs(gained) > RTC_RATE_SLACK_S:
+        t.fail(f"the clock gained {gained:+.0f} s in {secs:.0f} s ({gained / secs:+.0%})")
+    return f"{gained:+.0f} s in {secs:.0f} s"
 
 
 @rockbox_scenario("hang", area="boot", weight=1)

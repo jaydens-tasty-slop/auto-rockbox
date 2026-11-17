@@ -24,7 +24,7 @@ from tests.torture.fakes import DevShell, fast, mounted_at, step
 SHARED = {"codecs", "decode", "linein", "video", "codecmix", "shuffle", "skips", "folders",
           "longplay", "theme", "plugins", "db", "record", "fs", "sdodd", "meta", "missing", "usb",
           "pluginsweep", "menus", "monkey", "dbdeep", "recui", "fmui", "crawl", "volume",
-          "lcdfill", "hang", "dac"}
+          "lcdfill", "hang", "dac", "rtc"}
 NOT_TS17 = {"sleep", "fm"}      # the YP3's LCD gate read and its own FM commands
 BT = {"bt-onoff", "bt-pcdisc", "bt-pcpower", "bt-avrcp", "bt-churn", "bt-rate", "bt-disturb",
       "bt-reboot", "bt-forget", "bt-capture"}

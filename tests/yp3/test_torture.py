@@ -28,7 +28,7 @@ YP3_WEIGHTS = {"codecs": 12, "skips": 6, "monkey": 8, "plugins": 6, "fs": 4, "db
                "sdodd": 4,
                "meta": 4, "missing": 2, "theme": 4, "menus": 6, "fmui": 4, "dbdeep": 4, "crawl": 16,
                "codecmix": 8, "shuffle": 8, "folders": 4, "decode": 10, "linein": 4, "volume": 2,
-               "lcdfill": 2, "hang": 1, "dac": 1, "video": 4}
+               "lcdfill": 2, "hang": 1, "dac": 1, "rtc": 1, "video": 4}
 BT_WEIGHTS = {"bt-onoff": 3, "bt-pcdisc": 2, "bt-pcpower": 0, "bt-avrcp": 2, "bt-churn": 2,
               "bt-rate": 2, "bt-disturb": 2, "bt-reboot": 1, "bt-forget": 1, "bt-capture": 2}
 BUMBLE_WEIGHTS = {"bt-headset": 2, "bt-hid": 2}
