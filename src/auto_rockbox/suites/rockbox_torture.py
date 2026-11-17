@@ -2283,12 +2283,15 @@ def plugins(t: RockboxTorture) -> str | None:
     pick = t.rng.choice(choices)
     if pick.endswith("/"):
         # a port's collection (games/arduboy/: a .rock per game) is one
-        # choice, then one of its games
-        cat += "/" + pick.rstrip("/")
-        rocks = [r for r in plugin_choices(t, cat) if not r.endswith("/")]
-        if not rocks:
+        # choice, then one of its games; a folder without any is a plugin's
+        # data (games/pokitto_astarok/): one of the folder's own plugins then
+        sub = f"{cat}/{pick.rstrip('/')}"
+        if rocks := [r for r in plugin_choices(t, sub) if not r.endswith("/")]:
+            cat, pick = sub, t.rng.choice(rocks)
+        elif own := [r for r in choices if not r.endswith("/")]:
+            pick = t.rng.choice(own)
+        else:
             return t.skip(f"no plugins in {ROCKS}/{cat}")
-        pick = t.rng.choice(rocks)
     return try_plugin(t, f"{cat}/{pick}")
 
 
