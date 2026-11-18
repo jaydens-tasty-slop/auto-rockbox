@@ -181,7 +181,6 @@ ERROR_MSG = re.compile(r"(?i)error|fail|not enough|memory|cannot|can't|couldn't|
 # (apps/fileop.c prompt_name()); a failing mkdir or rename reports ten times
 # its error, never -1
 RANDOM_KEY_MSG = re.compile(r"(?i)^(create directory|rename) failed \(-1\)$")
-SHARED_EXPECTED_MSGS = {"monkey": RANDOM_KEY_MSG, "crawl": RANDOM_KEY_MSG}
 # Plugins that end in "Plugin returned error" when started without their data
 # or a file (upstream behaviour): the splash that explains it, None if none
 KNOWN_PLUGIN_ERRORS: dict[str, str | None] = {
@@ -190,6 +189,7 @@ KNOWN_PLUGIN_ERRORS: dict[str, str | None] = {
     "mp3_encoder.rock": None,                                   # a .wav viewer
     "imageviewer.rock": r"No supported files|No file|Unsupported file",
     "random_folder_advance_config.rock": r"folder_advance_list",
+    "xrick.rock": r'unable to open "filelist\.dat"',           # no game data
 }
 # Plugins that refuse every way out in a state random keys can leave them in
 # (upstream behaviour), and the splash that says so: Sudoku keeps a board
@@ -203,6 +203,12 @@ KNOWN_EXIT_REFUSALS: dict[str, str] = {
 KNOWN_PLUGIN_SPLASHES: dict[str, str] = {
     "keyremap.rock": r"^Error Saving$",
 }
+# Random keys also start plugins: their known splashes count for them too
+# (YP3 gate torture step 552: monkey in xrick without its game data)
+RANDOM_KEY_MSGS = re.compile("|".join(
+    [RANDOM_KEY_MSG.pattern] + [f"(?:{p})" for p in (*KNOWN_PLUGIN_ERRORS.values(),
+                                                    *KNOWN_PLUGIN_SPLASHES.values()) if p]))
+SHARED_EXPECTED_MSGS = {"monkey": RANDOM_KEY_MSGS, "crawl": RANDOM_KEY_MSGS}
 CODEC_ERRORS = re.compile(r"codec load \d+ failed|ov_open failed|codec header error|"
                           r"no matching image|EOM|not enough memory")
 VIDEO_DROP_MAX = 0.05           # the Video Player's dropped share of due pictures
@@ -323,6 +329,16 @@ def parse_status(lines: Iterable[str]) -> Status:
         if m := re.match(r"audio (\d+) elapsed (\d+)/(\d+) ms (\d+) Hz .* file (.*)$", ln):
             return Status(int(m[1]), int(m[2]), int(m[3]), int(m[4]), m[5])
     return Status(-1, 0, 0, 0, "-")
+
+
+def same_item(shown: str, name: str) -> bool:
+    """A menu item as the tree names it: a setting that shows its value
+    ("Bluetooth: On") matches with any value (YP3 gate torture bt-onoff
+    727: the walk sought "Bluetooth: On" with Bluetooth off)"""
+    if shown == name:
+        return True
+    label, sep, _ = name.partition(": ")
+    return bool(sep) and shown.startswith(label + sep)
 
 
 def progress_ms(s1: Status, s2: Status) -> int:
@@ -1102,10 +1118,26 @@ class RockboxTorture(TortureSuite):
         time.sleep(3)
         s2 = self.playing()
         bad = []
-        if s2.audio != AUDIO_PLAYING or progress_ms(s1, s2) < 1500:
+        # a single track that ends between the two reads stopped normally
+        # (YP3 gate torture step 898: 16.9 s of a 20 s file, then stopped)
+        ended = (s1.audio == AUDIO_PLAYING and s1.length and s2.audio == 0
+                 and s1.length - s1.elapsed <= 3500)
+        if (not ended and s2.audio == AUDIO_PLAYING and s2.path != s1.path
+                and progress_ms(s1, s2) < 1500):
+            # a track change can take a moment (a codec that needs another
+            # buffer layout): one more look before it counts as stuck
+            time.sleep(3)
+            s3 = self.playing()
+            if s3.audio == AUDIO_PLAYING and s3.path == s2.path and s3.elapsed >= 1500:
+                self.note(f"track change to {s2.path} slow: "
+                          f"{s1.elapsed}/{s1.length} -> {s2.elapsed} in 3 s")
+                s1, s2 = s2, s3
+        if ended:
+            pass
+        elif s2.audio != AUDIO_PLAYING or progress_ms(s1, s2) < 1500:
             bad.append(f"not progressing (audio {s1.audio}->{s2.audio}, elapsed "
                        f"{s1.elapsed}->{s2.elapsed})")
-        if path and s2.path != path:
+        if path and s2.path != path and not ended:
             bad.append(f"playing {s2.path}, not {path}")
         log = self.sh("log")
         if marker:
@@ -1322,11 +1354,11 @@ class RockboxTorture(TortureSuite):
         index = int(path.rpartition(".")[2])
         name = next((n.name for n in self.menu_tree() if n.path == path), "")[:SEL_ITEM_MAX]
         s = self.select_at(index)
-        if s is None or not name or s.item == name:
+        if s is None or not name or same_item(s.item, name):
             return
         for _ in range(s.count + SEL_TRIES):     # a dropped press: another lap
             self.keys("D 150")
-            if (at := self.selection()) is None or at.item == name:
+            if (at := self.selection()) is None or same_item(at.item, name):
                 return
         self.note(f"menu walk: {name!r} (menu tree {path}) is not in the list: by index")
         self.select_at(index)
@@ -1862,6 +1894,9 @@ def lcdfill(t: RockboxTorture) -> str | None:
     colour = t.rng.choice(FILL_COLOURS)
     want = np.array(rgb565(*colour), dtype=np.uint8)
     lcd = t.target.lcd
+    # from the main menu: a screen that redraws by itself (Recording's timer
+    # and meters, YP3 gate torture step 380) repaints the fill at once
+    t.home()
     h = t.health()
     t.sh(f"cfg {t.card_path('t_nobar.cfg')}")
     t.sh("fill {} {} {}".format(*colour))
@@ -1944,28 +1979,38 @@ def dac(t: RockboxTorture) -> str | None:
     tl = signal.load_timeline(conf.path("timeline"))
     base = json.loads(conf.path("baseline").read_text())
     path, vol = conf.string("signal"), conf.integer("volume")
-    with t.wired():
-        h = t.health()
-        t.sh(f"vol {vol}")
-        since = datetime.now(UTC)
-        t.sh(f"play {path}")
-        time.sleep(3)
-        if (s0 := t.playing()).path != path:
-            t.fail(f"the signal did not start (audio {s0.audio}, playing {s0.path})")
+    h = t.health()
+    # a sound from elsewhere on the bench can reach the capture (YP3 gate
+    # torture step 504: an 800 Hz tone in the silence, crosstalk +34 dB):
+    # a failed analysis gets one more capture, and fails only if that does
+    for attempt in (1, 2):
+        with t.wired():
+            t.sh(f"vol {vol}")
+            since = datetime.now(UTC)
+            t.sh(f"play {path}")
+            time.sleep(3)
+            if (s0 := t.playing()).path != path:
+                t.fail(f"the signal did not start (audio {s0.audio}, playing {s0.path})")
+                return None
+            time.sleep(tl.total)            # no shell traffic meanwhile
+            until = datetime.now(UTC)
+            time.sleep(linein.LAG_S + 1.5)
+        lag = timedelta(seconds=linein.LAG_S)
+        x, fs = load_capture(linein.between(linein.history(directory), since + lag, until + lag))
+        try:
+            r = analyze.analyse(x, fs, tl, t.step.name)
+        except (IndexError, ValueError, KeyError) as e:
+            t.fail(f"no analysis of the capture: {e!r}")
             return None
-        time.sleep(tl.total)            # no shell traffic meanwhile
-        until = datetime.now(UTC)
-        time.sleep(linein.LAG_S + 1.5)
-    lag = timedelta(seconds=linein.LAG_S)
-    x, fs = load_capture(linein.between(linein.history(directory), since + lag, until + lag))
-    try:
-        r = analyze.analyse(x, fs, tl, t.step.name)
-    except (IndexError, ValueError, KeyError) as e:
-        t.fail(f"no analysis of the capture: {e!r}")
-        return None
-    t.step_file("result", ".json").write_text(json.dumps(r))
-    t.transcript += ["", analyze.report(r)]
-    if bad := dac_problems(base, r):
+        t.step_file("result" if attempt == 1 else "result2", ".json").write_text(json.dumps(r))
+        t.transcript += ["", analyze.report(r)]
+        bad = dac_problems(base, r)
+        if not bad:
+            break
+        if attempt == 1:
+            t.note("dac: capture 1 off the saved analysis (" + "; ".join(bad[:2]) +
+                   "): once more")
+    if bad:
         t.fail("; ".join(bad[:5]) + (f" (+{len(bad) - 5})" if len(bad) > 5 else ""))
     t.check_health(h)
     return f"gain {r['gain_1k'][0]:.2f}/{r['gain_1k'][1]:.2f} dB at {vol} dB"
@@ -2092,8 +2137,9 @@ def video(t: RockboxTorture) -> str | None:
     t.plugin_keys(t.rng.choices(["U", "D", "L", "R", "S", "200", "1000"], k=10))
     time.sleep(2)
     # Quit is the menu's last item (Up wraps to it), but a landscape video
-    # turns the keys with the picture: Up is Right then
-    for up in ("U", "R"):
+    # turns the keys with the picture: Up is Right then, or Left when random
+    # keys turned it anticlockwise (YP3 gate torture step 89, paused there)
+    for up in ("U", "R", "L", "D"):
         if t.in_plugin():
             t.keys(f"S+ 300 {up} 300 S")
             time.sleep(1)
