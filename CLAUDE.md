@@ -24,6 +24,8 @@ handling. One `Target` subclass per player; everything else is shared.
   headset and with the player, against stock.
 - [skills/battery.md](skills/battery.md): battery runs and discharge tables.
 - [skills/release.md](skills/release.md): what a release must pass.
+- `src/auto_rockbox/port-checklist.md`: the port checklist, these skills as
+  items; each port fills in a copy (`arb checklist`, bring-up.md).
 
 ## Code
 

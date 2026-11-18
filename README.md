@@ -56,6 +56,10 @@ The `skills/` directory has the method behind the tools, in plain markdown:
   [battery.md](skills/battery.md).
 - [release.md](skills/release.md): what a release must pass.
 
+Each port fills in its own copy of the [port checklist](src/auto_rockbox/port-checklist.md)
+(`arb checklist init PLAYER`); a merge request carries it, and
+`arb checklist check PLAYER --through PHASE` verifies it.
+
 ## Targets
 
 | Target | Player | Reached through |

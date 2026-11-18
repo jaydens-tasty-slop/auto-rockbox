@@ -67,7 +67,7 @@ Each Rockbox run must show all of these:
       recording and USB if they ship, and the menu crawl's coverage reached
       every menu.
 - [ ] Zero unexplained faults, panics, hangs or watchdog returns. Every
-      incident has a `TODO.md` entry and is either fixed (with the fix
+      incident has a backlog entry and is either fixed (with the fix
       verified by a targeted run) or listed as a known issue with its
       trigger.
 - [ ] Health counters within budget: no playback underruns outside the
@@ -173,7 +173,7 @@ Each Rockbox run must show all of these:
 - [ ] **A code quality audit** of all target code against the list below,
       by a reviewer who did not write the code under review (a person, or a
       fresh agent given the code and this list). Every finding is fixed, or
-      it gets a `TODO.md` entry saying why it waits.
+      it gets a backlog entry saying why it waits.
   - [ ] No magic numbers in drivers. Every address, mask, pad, IRQ number,
         priority and clock rate is named and defined in its one home
         ([bring-up.md](bring-up.md), "One home for every constant").
@@ -211,18 +211,23 @@ Each Rockbox run must show all of these:
 
 - [ ] Someone other than the developer used the candidate as their daily
       player for at least two days: real headphones, their own music, and
-      Bluetooth if it ships. Every complaint is triaged in `TODO.md`.
+      Bluetooth if it ships. Every complaint is triaged in the backlog.
 
 ## After release
 
 - Keep the release candidate's logs and the results file. The next release's
   "regression against the previous release" checks need them.
-- Track field reports in `TODO.md` with the release version in the entry.
+- Track field reports in the backlog with the release version in the entry.
+- The release ticks the port checklist's `release` phase
+  (`docs/PLAYER/checklist.md`), each item pointing at its result in
+  `docs/release-<version>.md`; `arb checklist check PLAYER --through
+  release` passes before the tag.
 - Optional: **send the target upstream.** If the port's `Target` class and
   commands live in the port's own tree (a workspace plugin), open a pull
   request to [auto-rockbox](https://github.com/jaydens-tasty-slop/auto-rockbox)
   that adds them as `targets/<player>/`. Include its offline tests, the
   config keys in its class docstring, and a line in the README's target
-  list. Leave out personal bench values (card UUIDs, addresses, paths) and
-  anything derived from stock firmware. A released port's target has
+  list, and its filled checklist: the reviewer runs `arb checklist check
+  FORM --through release`. Leave out personal bench values (card UUIDs,
+  addresses, paths) and anything derived from stock firmware. A released port's target has
   survived a full release checklist, so other ports can start from it.

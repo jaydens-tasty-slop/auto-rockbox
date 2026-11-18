@@ -9,6 +9,24 @@ The order matters. Each phase makes the next one cheap and safe: **a way back
 before a way in, a dev loop before drivers, and measurements before
 conclusions.**
 
+## The port's checklist and backlog
+
+Start every port with `arb checklist init PLAYER`. It copies auto-rockbox's
+checklist (`src/auto_rockbox/port-checklist.md`: this page and release.md
+as items, phase by phase) into the port as `docs/PLAYER/checklist.md`.
+Fill it in as the port goes: a closed item carries dated evidence a
+reviewer can open (a commit, a run directory, a doc section, a fact id),
+and an item that doesn't apply says why. A merge request to the port's
+Rockbox fork or to auto-rockbox carries the form, and
+`arb checklist check PLAYER --through PHASE` must pass for the phase it
+claims: `devloop` for a target whose dev loop runs, `release` for a
+released port. `arb checklist update` brings in what a newer template
+adds. Never reword an item to make it pass; the check compares the text.
+
+Each player also gets its own backlog (`docs/PLAYER/TODO.md`) and notes
+(`docs/PLAYER/`). A TODO shared by several players mixes their open items,
+and a fix on one player reads as done for the other.
+
 ## Ground rules
 
 - **Clean room.** Read stock firmware for facts only: register addresses,
@@ -132,6 +150,13 @@ conclusions.**
   tools switch it off. `arb` guards it on every run.
 - **One process per device.** The tools lock each device. Never run two
   tools against the same player.
+- **Tell units apart before writing.** Players on one SoC share the boot
+  ROM's USB IDs: the TS17 and the TS28 are both `10d6:10d6` in download
+  mode, so a tool that finds "the" device may have the other player. A
+  tool that writes flash checks which unit it has (a chip unique ID, or
+  the bench's USB port pinned in the config) before its first write.
+  Until it can, only one such player sits in recovery mode on USB at a
+  time.
 - **Before every hardware step, write down what it tests and why.** A step
   without a question wastes a reflash and teaches nothing.
 - **When the user's hands are the test, watch with something that tells you
@@ -156,6 +181,19 @@ conclusions.**
 
 Record facts in `docs/hardware.md` as you find them, each with how you know
 it (measured, read from stock at an address, or guessed).
+
+**A second player on a SoC you already support** starts further along:
+the boot ROM link, the flash tools and the chip's drivers carry over (the
+TS28 after the TS17). Two things don't:
+
+- **Board facts.** The panel, keys, pads, amplifier, tuner, flash layout
+  and every pin are this board's. Ask for them from this player's own
+  stock firmware or measure them; a sibling's board fact is a guess here.
+- **The way back.** The hand path into recovery mode may live in stock's
+  application (the TS17's did). Keep stock bootable until this player's
+  own way back is proven: dev images go into a free flash range beside
+  stock if there is one, and nothing is written over stock's application
+  before you know what the boot chain does without it.
 
 ### Triage: can Rockbox fit at all?
 
@@ -393,9 +431,9 @@ Then the torture suite until it runs clean for days, the battery runs
   music rather than tone, and the capture can run seconds behind the player.
 - **A power-off needs a proven wake path** before you test it unattended:
   prove the wake while the player is on.
-- **Docs are facts, not diaries.** Keep `docs/hardware.md`,
-  `docs/driver-status.md` and `TODO.md` current and short, and put every
-  crash and open experiment in `TODO.md` at once. Leave out session
+- **Docs are facts, not diaries.** Keep the player's notes, driver status
+  and backlog (`docs/PLAYER/TODO.md`) current and short, and put every
+  crash and open experiment in the backlog at once. Leave out session
   transcripts.
 - **Temporary hacks get `TODO(cleanup)`.** No diagnostic scaffolding in
   normal builds. One-off probe commands come out of the dev shell once their

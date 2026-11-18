@@ -108,7 +108,7 @@ For each failure:
    threads`, the log's last PCs) say where it spun.
 3. **Reproduce it narrowly**: `--only` that scenario, then a plain `run`
    with the same keys or shell commands.
-4. **Put it in `TODO.md` at once**: the run, the step, what was seen, and
+4. **Put it in the player's backlog at once** (`docs/PLAYER/TODO.md`): the run, the step, what was seen, and
    the first guess. Do this before fixing it.
 5. Verify a fix with a targeted run, then let the next full run confirm it.
 

@@ -262,6 +262,23 @@ because they don't ship. Keep them on the tooling side:
   for every constant"). Every driver can be traced to `facts.md` entries or
   measurements.
 
+## Several players on one SoC
+
+Players that share a SoC share one analyst, one referee and one mailbox
+(the TS17 and the TS28 on the Actions Lark), with a port session each:
+
+- Every fact names its scope: `chip` (any board) or `board: NAME`. A
+  board fact of one player is never used for another; the port asks
+  for its own board's.
+- The port sessions append to one question file with ids in one
+  sequence: re-read the file just before appending, and the later of two
+  writers renumbers.
+- A new port's first entry is a status entry naming its session, so the
+  referee pings the right port for its facts; the two port sessions may
+  talk to each other directly (both are clean).
+- The new player's stock dump goes where the analyst imports from, as a
+  backup made by the port's tools and never opened on the clean side.
+
 ## Bringing an existing port in line
 
 For a port already under way, as the TS17 and the YP3 were:
