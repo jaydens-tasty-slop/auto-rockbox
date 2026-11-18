@@ -16,7 +16,7 @@ from pathlib import Path
 
 from tests import Skip
 
-SUITES = ("ts17", "yp3", "torture", "fm", "host", "bt", "btpeer", "plugins")
+SUITES = ("ts17", "ts28", "yp3", "torture", "fm", "host", "bt", "btpeer", "plugins")
 
 
 def main(suites: list[str] | None = None) -> int:

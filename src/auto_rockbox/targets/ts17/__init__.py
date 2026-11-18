@@ -39,7 +39,7 @@ FB_SYMBOL = "lcd_static_framebuffer"    # Rockbox's framebuffer, in SRAM at the 
 FB_KEEP = 0x100                 # the gadget's status block and a few results: what the
                                 # charger guard overwrites at the framebuffer's start
 SETTLE_S = 0.5                  # download mode answers a moment after it enumerates
-SHELL_VID, SHELL_PID = "1209", "0002"   # the dev build's USB IDs (ts17.h, pid.codes test IDs)
+SHELL_VID = "1209"              # the dev build's USB vendor (pid.codes test IDs)
 
 
 def _note(msg: str) -> None:
@@ -60,6 +60,9 @@ class Ts17(Target):
                      the device and dev-shell lock files in the temp dir
                      (default: auto-rockbox-ts17[-shell].lock); "ts17dev.lock"
                      makes arb and ts17dev exclude each other
+        model_tag    the model text at NOR 0x1338 that every write checks first,
+                     so the tools never write one Lark player's image into
+                     another (default: the class's, from the player's backup)
         bt_address   the player's BD_ADDR: torture's bt-* scenarios (with
                      [bluetooth] sink and adapter); default none
         menu_coverage = "<paths.build>/menu-coverage-ts17.json"
@@ -76,6 +79,8 @@ class Ts17(Target):
     lcd = Lcd(128, 160)
     key_letters = "UDLRSVvP"     # ring, centre, volume up/down, on/off
     capabilities = frozenset({"framebuffer", "shell", "battery", "cold", "usb", "storage"})
+    model_tag: ClassVar[str] = "xlx_58209_TS17_01"  # NOR 0x1338 (nor.model_tag)
+    shell_pid: ClassVar[str] = "0002"   # the dev build's USB product ID (ts17.h)
     return_line = devblock.RETURN_LINE
     dev_dir = "/ts17test"           # ts17.h DEV_CARD_DIR
     log_faults = r"lcd: frame timed out"
@@ -89,13 +94,22 @@ class Ts17(Target):
         self._cold = False
 
     def image(self) -> Path:
-        return self.conf.opt_path("image") or self.ws.build_dir / "ts17" / "rockbox.elf"
+        return self.conf.opt_path("image") or self.ws.build_dir / self.name / "rockbox.elf"
 
     def _flat(self, elf: Path) -> bytes:
-        out = self.ws.build_dir / "arb" / "ts17" / "image.bin"
+        out = self.ws.build_dir / "arb" / self.name / "image.bin"
         out.parent.mkdir(parents=True, exist_ok=True)
         gadget.run_tool([self.ws.tool("objcopy"), "-O", "binary", str(elf), str(out)])
         return out.read_bytes()
+
+    def check_unit(self, s: gadget.Session) -> None:
+        """Refuses a player whose model text is not this target's: the TS17
+        and the TS28 share download mode's USB IDs"""
+        want = self.conf.string("model_tag", self.model_tag)
+        got = nor.model_tag(s)
+        if got != want:
+            raise Ts17Error(f"the player in download mode is {got!r}, not the {self.name} "
+                            f"({want!r}): another Lark player on USB? Nothing written")
 
     def before_run(self, req: RunRequest) -> None:
         devblock.check_settings(req.settings)   # bad settings fail before any device call
@@ -113,6 +127,7 @@ class Ts17(Target):
             raise Ts17Error(f"{req.image.name}: {len(cells):#x} bytes do not fit fw0_sys "
                             f"({nor.FW0_SYS_SIZE:#x})")
         with gadget.connect(self.ws) as s:
+            self.check_unit(s)
             n = nor.write_cells(s, nor.FW0_SYS, cells, progress=_note)
             _note(f"{n} of {len(cells) // nor.SECTOR} sectors rewritten")
             s.link.write(devblock.CFG, config)
@@ -179,13 +194,13 @@ class Ts17(Target):
         return Battery(st.millivolts, st.charging, st.note)
 
     def shell(self) -> Shell:
-        return Shell(self.name, SHELL_VID, SHELL_PID,
+        return Shell(self.name, SHELL_VID, self.shell_pid,
                      lock_file=self.conf.string("shell_lock", "") or None)
 
     def _card_uuid(self) -> str | None:
         uuid = self.conf.get("card_uuid")
         if uuid is not None and not isinstance(uuid, str):
-            raise ConfigError("[targets.ts17] card_uuid: a string is needed")
+            raise ConfigError(f"[targets.{self.name}] card_uuid: a string is needed")
         return uuid
 
     @contextmanager

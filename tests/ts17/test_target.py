@@ -26,7 +26,8 @@ def test_registered_with_commands() -> None:
     for name in ("run", "log", "fb", "keys", "battery", "card-push", "nor dump", "reboot", "mem",
                  "stock-adfu", "sh"):
         assert name in cmds, name
-    assert cmds["nor dump"].targets == frozenset({"ts17"})
+    assert cmds["nor dump"].targets == frozenset({"ts17", "ts28"})
+    assert cmds["stock-adfu"].targets == frozenset({"ts17"})
 
 
 def test_key_scripts() -> None:

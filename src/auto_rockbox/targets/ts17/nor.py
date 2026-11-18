@@ -18,6 +18,7 @@ it, or putting one there, takes `rescue`.
 from __future__ import annotations
 
 import hashlib
+import io
 import struct
 from collections.abc import Callable
 from typing import BinaryIO
@@ -59,6 +60,11 @@ REMAP2 = 0x40010310             # entry 2: the tools' read window
 REMAP_ON = 0xF
 REMAP_CRYPT = 1 << 31           # in the offset: mbrec's second attempt
 WINDOW = 0x12000000             # entry 2's virtual base, as mbrec uses it
+# The version block's model text (NOR 0x1338, in the boot area no write
+# reaches without --boot): per model, so the tools can tell two Lark players
+# apart before a write, as both enumerate as 10d6:10d6 (Lark fact L-F-0018)
+MODEL_TAG_SECTOR = 0x1000
+MODEL_TAG_AT, MODEL_TAG_LEN = 0x338, 32     # within that sector
 COPY_BUF = 0x01048000           # 32 KiB RAM for reads and writes, after the gadget's output
 CHUNK = 0x8000
 SPIN_10US = 2000                # DELAY spins: generous at any likely clock
@@ -120,6 +126,14 @@ def read(s: Session, start: int, length: int, out: BinaryIO, *, raw: bool = Fals
         out.write(s.link.read(COPY_BUF, min(CHUNK, start + length - off)))
         if progress:
             progress(f"{(off + CHUNK - start) // 1024} KiB")
+
+
+def model_tag(s: Session) -> str:
+    """The model text of the player on the link"""
+    buf = io.BytesIO()
+    read(s, MODEL_TAG_SECTOR, SECTOR, buf)
+    raw = buf.getvalue()[MODEL_TAG_AT:MODEL_TAG_AT + MODEL_TAG_LEN]
+    return raw.split(b"\0", 1)[0].decode("ascii", "replace")
 
 
 def _rom_read(s: Session, addr: int, n: int) -> bytes:

@@ -1,4 +1,4 @@
-"""The TS17's own commands, all from download mode: the NOR flash, memory,
+"""The Lark players' own commands (TS17, TS28), all from download mode: the NOR flash, memory,
 resets, and the way back from stock firmware."""
 
 from __future__ import annotations
@@ -9,10 +9,19 @@ from argparse import Namespace
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 from ...registry import Context, arg, command, group
 from . import adfu, gadget, nor, power, rdm, stock
 from .gadget import Ops, Session
+
+
+@runtime_checkable
+class Unit(Protocol):
+    """A Lark target that can tell whether the player on USB is its own"""
+
+    def check_unit(self, s: Session) -> None: ...
+
 
 WAIT_S = 30.0                   # a command may be typed while the player is coming back
 
@@ -44,15 +53,20 @@ def _progress(msg: str) -> None:
 
 def _write(ctx: Context, start: int, cells: bytes, boot: bool, rescue: bool) -> None:
     with _session(ctx) as s:
+        if not isinstance(ctx.t, Unit):
+            raise TypeError(f"{ctx.t.name}: not a Lark target")
+        ctx.t.check_unit(s)
         n = nor.write_cells(s, start, cells, boot=boot, rescue=rescue, progress=print)
     print(f"{n} of {len(cells) // nor.SECTOR} sectors rewritten; "
           f"{start:06x}+{len(cells):x} matches")
 
 
 def nor_ident(ctx: Context, args: Namespace) -> None:
-    """CPU (SCB), NOR controller, cache, remap and watchdog registers;
-    "(fault)" marks a register whose read faulted."""
+    """The model text (what every write checks), then the CPU (SCB), NOR
+    controller, cache, remap and watchdog registers; "(fault)" marks a
+    register whose read faulted."""
     with _session(ctx) as s:
+        print(f"model     {nor.model_tag(s)!r}")
         ops = Ops()
         for addr in SCB.values():
             ops.r32(addr)
@@ -133,25 +147,26 @@ RESCUE_ARG = arg("--rescue", action="store_true",
                  help="allow installing the rescue stub at 0x14000 where there is none, "
                       "or removing it (stock's start); only the frozen stub is written")
 TS17 = {"ts17"}
+LARK = {"ts17", "ts28"}         # the Lark players: one boot ROM, boot chain and flash layout
 
 group("nor", help="the NOR flash: ident, map, dump, restore, program")
-command("nor ident", target=TS17,
+command("nor ident", target=LARK,
         help="CPU, NOR controller, cache, remap and watchdog registers")(nor_ident)
-command("nor map", target=TS17, help="64 bytes at a NOR offset",
+command("nor map", target=LARK, help="64 bytes at a NOR offset",
         args=[arg("offset", type=number), *WINDOW_ARGS])(nor_map)
-command("nor dump", target=TS17, help="NOR to a file",
+command("nor dump", target=LARK, help="NOR to a file",
         args=[arg("file", type=Path), arg("start", type=number), arg("length", type=number),
               *WINDOW_ARGS])(nor_dump)
-command("nor restore", target=TS17, help="write back a --raw dump (changed sectors only)",
+command("nor restore", target=LARK, help="write back a --raw dump (changed sectors only)",
         args=[arg("image", type=Path, nargs="?"),
               arg("start", type=number, nargs="?", default=0),
               arg("length", type=number, nargs="?"), BOOT_ARG, RESCUE_ARG])(nor_restore)
-command("nor program", target=TS17, help="write a plain file, encoded for XIP",
+command("nor program", target=LARK, help="write a plain file, encoded for XIP",
         args=[arg("file", type=Path), arg("start", type=number), BOOT_ARG,
               RESCUE_ARG])(nor_program)
 
 
-@command("reboot", target=TS17, help="reset into download mode, or into stock firmware",
+@command("reboot", target=LARK, help="reset into download mode, or into stock firmware",
          args=[arg("--stock", action="store_true",
                    help="clear the boot-mode magic: boots stock (or whatever is at fw0_sys)")])
 def reboot(ctx: Context, args: Namespace) -> int:
@@ -163,7 +178,7 @@ def reboot(ctx: Context, args: Namespace) -> int:
     return 0
 
 
-@command("mem", target=TS17, help="read the player's memory into a file", args=[
+@command("mem", target=LARK, help="read the player's memory into a file", args=[
     arg("addr", type=number), arg("size", type=number), arg("file", type=Path)])
 def mem(ctx: Context, args: Namespace) -> int:
     """Plain ROM reads: no gadget runs, so RAM is as the last run left it
@@ -173,6 +188,37 @@ def mem(ctx: Context, args: Namespace) -> int:
     args.file.write_bytes(data)
     print(f"read {args.size:#x} bytes from {args.addr:#010x} into {args.file}")
     return 0
+
+
+@command("regs", target=LARK, help="read registers through the gadget; --watch shows changes",
+         args=[arg("addr", type=number, nargs="+", help="32-bit register addresses"),
+               arg("--watch", type=float, default=0.0, metavar="SECONDS",
+                   help="read every 50 ms for SECONDS and print each change"),
+               arg("--noise", type=number, default=0, metavar="N",
+                   help="with --watch, a change counts when a value moves by more than N "
+                        "(an ADC channel's jitter)")])
+def regs(ctx: Context, args: Namespace) -> int:
+    """Peripheral registers, read by the ops gadget on the player's CPU: the
+    ROM's own read (`mem`) reaches RAM only. With --watch, a line whenever a
+    value changes, stamped in seconds: press keys by hand to find their bits
+    and ladder levels. --noise hides an ADC's jitter (it hides bit changes
+    below N too)."""
+    ops = Ops()
+    for a in args.addr:
+        ops.r32(a)
+    with _session(ctx) as s:
+        start = time.monotonic()
+        last: list[int] = []
+        while True:
+            vals = s.values(ops)
+            if not last or any(abs(v - w) > args.noise for v, w in zip(vals, last, strict=True)):
+                print(f"{time.monotonic() - start:6.2f}  " +
+                      "  ".join(f"{a:08x}={v:08x}" for a, v in zip(args.addr, vals, strict=True)),
+                      flush=True)
+                last = vals
+            if time.monotonic() - start >= args.watch:
+                return 0
+            time.sleep(0.05)
 
 
 @command("stock-adfu", target=TS17, help="stock firmware's USB disk into download mode")
