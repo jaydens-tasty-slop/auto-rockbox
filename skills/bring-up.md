@@ -157,6 +157,56 @@ conclusions.**
 Record facts in `docs/hardware.md` as you find them, each with how you know
 it (measured, read from stock at an address, or guessed).
 
+### Triage: can Rockbox fit at all?
+
+Answer this before Phase 1. It takes an hour, and the port takes weeks.
+Players at the same price differ by more than ten times in RAM. The
+US212D (Actions ATJ2127) had 168 KiB of SRAM and the TS17 4 MiB of PSRAM,
+so the price tells you nothing.
+
+Two numbers decide it: **how much RAM**, and **where code can run**.
+
+- **Code from flash (XIP)** needs NOR behind a cache, or PSRAM. NAND, or
+  an uncached core, means all code and data live in RAM at once. A core
+  with no MMU can't page code in from storage either. Stock firmware on
+  such chips swaps overlays in from NAND, which Rockbox doesn't do.
+- **The floor, from the ports:** the YP3 runs a 640-770 KB core from cached
+  XIP NOR with 512 KiB of SRAM. Its static data alone is 153 KB, plus a
+  127 KB codec/plugin arena, and it is tight. Without XIP, everything it
+  keeps in flash moves into RAM: plan on 1 MiB or more (GUESS from those
+  numbers). Upstream's smallest targets have 2 MiB (`memory=2` in
+  `tools/configure`).
+- **Verdict examples:** TS17, 4 MiB PSRAM: easy. YP3, 512 KiB SRAM + XIP
+  NOR: tight but done. US212D, 168 KiB SRAM, NAND only, M4K core with no
+  cache or MMU: dropped after one evening.
+
+Measure it through the boot ROM, with no case opening, read-only first:
+
+1. **Read the RAM window** with the ROM's read command. Uninitialised SRAM
+   reads as noise (close to 8 bits/byte of entropy). The ROM area often
+   reads as zeros. The ROM's own data (USB descriptors, its stack, code it
+   copied into RAM) has structure; leave it alone.
+2. **Write, read back and restore single words** in the noisy regions, up to
+   the top. The edges give the size. Edges that refuse writes may be
+   guarded by the ROM, not missing RAM: note them as unknown.
+3. **CPU**: read the ID and cache configuration (CPUID, or PRId and
+   Config1). Time the cycle counter (DWT CYCCNT, CP0 Count) against the
+   host's clock across two gadget runs a few seconds apart, and time a fixed
+   loop for cycles per instruction. Note the PLL setting you measured at.
+   The top clock comes from the vendor's clock levels.
+4. **Storage**: read the NAND ID or SPI NOR JEDEC ID. NAND with no DRAM or
+   PSRAM is the red flag.
+
+Vendor SDKs leaked on GitHub often carry linker scripts with the memory
+map. Use them to aim the measurements, read them through a subagent that
+returns facts only ([clean-room.md](clean-room.md)), and confirm on
+hardware.
+
+Send a boot ROM only the commands you know it implements. The ATJ2127 ROM
+answered an unknown one (execute) with a failure status, then hung on the
+next command, EP0 included. Only a power cycle by hand brought it back.
+Write the verdict and its numbers at the top of the player's notes.
+
 ## Phase 1: a way in and a way back
 
 1. **Talk to the boot ROM**: read memory, write RAM, run code. Usually there
