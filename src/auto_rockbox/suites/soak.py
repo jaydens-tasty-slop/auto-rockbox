@@ -196,11 +196,12 @@ def _flick_folder(step: StepContext) -> str | None:
 @scenario("flick", suite="soak", area="ui", weight=1, needs={"touch", "storage"})
 def flick(step: StepContext) -> Outcome:
     """Lists under the finger (HAVE_TOUCH_FLING's log): in a list of 60
-    rows, half the time with music playing, a flick down and one up each
-    coast and end; a short flick scrolls instead of opening a row; taps on
-    coasting lists catch them and open nothing; a flick right after a catch
-    is boosted; coasts keep FLICK_FPS. Touches stay off the screen's edges
-    and its bottom fifth (a mini player)"""
+    rows, half the time with the tone repeating (whole on Line In, when
+    it runs), a flick down and one up each coast and end; a short flick
+    scrolls instead of opening a row; taps on coasting lists catch them and
+    open nothing; a flick right after a catch is boosted; coasts keep
+    FLICK_FPS. Touches stay off the screen's edges and its bottom fifth (a
+    mini player)"""
     if problem := _flick_folder(step):
         return Outcome([problem])
     t = step.target
@@ -212,11 +213,18 @@ def flick(step: StepContext) -> Outcome:
     music = step.rng.random() < 0.5 and bool(t.dev_dir)
     settings = {"sh": "browse /flick/Row 01"}
     if music:
-        settings |= {**WIRED, "volume": TONE_DB, "play": f"{t.dev_dir}/tone.mp3"}
-    out = boot(step, 40, keys, settings=settings).outcome
+        # repeated: the tone's loud half (the part judged) under the flicks too
+        settings = {**WIRED, "volume": TONE_DB, "play": f"{t.dev_dir}/tone.mp3",
+                    "sh": settings["sh"] + ";repeat 2"}
+    b = boot(step, 40, keys, settings=settings)
+    out = b.outcome
     out.note = "with music" if music else "quiet"
     if out.lost:
         return out
+    if music and linein.running(directory := linein.directory(t.ws)):
+        c = linein.tone_check(directory, b.t0, b.t1)
+        out.problems += c.problems
+        out.note += f" ({c.note})"
     flings, coasts = FLING.findall(out.output), COAST.findall(out.output)
     if len(flings) != 6:
         out.problems.append(f"{len(flings)} flings of 6 (a flick taken for a tap?)")
