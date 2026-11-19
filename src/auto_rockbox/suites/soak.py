@@ -56,6 +56,9 @@ FMSTAT = re.compile(r"^fmstat (\d+) kHz: present (\d) tuned (\d) stereo (\d) "
 FM_FLOOR_DBFS = -35.0   # quieter Line In seconds are not the radio (~-16 dBFS RMS at 0 dB)
 ROCKS = "/.rockbox/rocks"
 USB_HASH_MIB = 16       # the usb-hash step's file
+UDELAY = re.compile(r"^udelay (\d+) us x \d+ at (\d+) MHz: -?\d+ ticks, (\d+\.\d+) us a call$",
+                    re.M)
+UDELAY_LENGTHS = 7      # the shell's udelay: 1 us to 1 s by tens
 USB_HASH_FILE = "arb-usbhash.bin"
 GAME_S = 45             # a game step's run time: the boot, the script and a margin
 
@@ -198,6 +201,29 @@ def usb_hash(step: StepContext) -> Outcome:
             "(with the mount)")
     return Outcome([] if got == want else [f"read back sha256 {got[:16]}, wrote {want[:16]}"],
                    note=note, output=f"{note}\nwrote {want}\nread  {got}\n")
+
+
+@scenario("udelay", suite="soak", area="boot", weight=1)
+def udelay(step: StepContext) -> Outcome:
+    """udelay from 1 us to 1 s by tens, at the normal clock and boosted,
+    timed against the tick by the shell's udelay: never short by more than
+    the tick's 1% of the second each length runs, and over by no more than
+    a microsecond or 2%"""
+    out = boot(step, 45, settings={"sh": "udelay;cpu max;udelay"}).outcome
+    if out.lost:
+        return out
+    if "sh: udelay: err" in out.output:
+        return Outcome(note="skipped: the build's shell has no udelay", skipped=True,
+                       output=out.output)
+    got = UDELAY.findall(out.output)
+    if len(got) != 2 * UDELAY_LENGTHS:
+        out.problems.append(f"{len(got)} udelay lines of {2 * UDELAY_LENGTHS}")
+    for us, mhz, took in got:
+        asked, t = int(us), float(took)
+        if t < asked * 0.99 or t > asked + max(1, asked * 0.02):
+            out.problems.append(f"udelay({asked}) at {mhz} MHz took {took} us")
+    out.note = ", ".join(f"udelay(1) {t} us at {mhz} MHz" for us, mhz, t in got if us == "1")
+    return out
 
 
 @scenario("tone", suite="soak", area="audio", weight=2)

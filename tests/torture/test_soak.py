@@ -23,7 +23,8 @@ from auto_rockbox.targets.yp3 import Yp3
 from auto_rockbox.workspace import Workspace
 
 RETURN = "dev return: on time"
-GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone", "games", "usb-hash"}
+GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone", "games", "usb-hash",
+           "udelay"}
 
 
 class LogPlayer(Target):
@@ -78,7 +79,7 @@ def test_registered() -> None:
                                     "flick": "needs touch", "fm-station": "needs fm"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert ({n for n, s in ts17.items() if s.targets is None}
-            == {"crash", "sdtest", "fsck", "games", "usb-hash"})
+            == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay"})
     assert all(ts17[n].targets == {"ts17"} for n in ("boot", "tone", "poweroff"))
 
 
@@ -159,6 +160,26 @@ def test_usb_hash() -> None:
         assert out.problems == [] and out.note.startswith("16 MiB written")
         assert len(reads[0]) == 16 << 20 and not list(mp.iterdir())
         assert check(True).problems[0].startswith("read back sha256")
+
+
+def test_udelay() -> None:
+    """Every length at both clocks, none short or long; a build without the
+    command skips"""
+    def lines(short: int = 0) -> str:
+        return "".join(f"udelay {us} us x {max(1, 10**6 // us)} at {mhz} MHz: 100 ticks, "
+                       f"{us * (0.5 if us == short else 1) + (0.5 if us == 1 else 0):.3f} "
+                       "us a call\n"
+                       for mhz in (96, 128) for us in (10 ** e for e in range(7)))
+    out, p = run("udelay", lambda req: lines() + RETURN)
+    assert out.problems == [] and out.note == ("udelay(1) 1.500 us at 96 MHz, "
+                                               "udelay(1) 1.500 us at 128 MHz")
+    assert p.requests[0].settings == {"sh": "udelay;cpu max;udelay"}
+    out, _ = run("udelay", lambda req: lines(short=1000) + RETURN)
+    assert out.problems == ["udelay(1000) at 96 MHz took 500.000 us",
+                            "udelay(1000) at 128 MHz took 500.000 us"]
+    assert run("udelay", lambda req: "udelay 1 us x 1000000 at 96 MHz: 150 ticks, 1.500 "
+               "us a call\n" + RETURN)[0].problems == ["1 udelay lines of 14"]
+    assert run("udelay", lambda req: "sh: udelay: err\n" + RETURN)[0].skipped
 
 
 def test_tone_needs_the_capture() -> None:
