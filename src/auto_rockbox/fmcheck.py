@@ -45,7 +45,12 @@ def check(path: Path, step: float = WRAP_STEP) -> FmCheck:
             raise ValueError(f"{path}: 16-bit PCM WAV needed")
         rate, ch = w.getframerate(), w.getnchannels()
         a = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, ch)
-    x = a.astype(np.float64) / 32768.0
+    return check_frames(a.astype(np.float64) / 32768.0, rate, step)
+
+
+def check_frames(x: np.ndarray, rate: int, step: float = WRAP_STEP) -> FmCheck:
+    """check() of frames (n, channels) in full-scale units"""
+    ch = x.shape[1]
     n = max(1, int(rate * SETTLE_S))
     at = []
     for i, c in zip(*np.nonzero(np.abs(np.diff(x, axis=0)) > step), strict=True):

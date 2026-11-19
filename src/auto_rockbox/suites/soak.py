@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from .. import card, engine, linein
+from .. import card, engine, fmcheck, linein
 from ..engine import Outcome, StepContext, Suite, scenario
 from ..errors import ArbError
 from ..registry import Context, arg, command
@@ -49,6 +49,9 @@ FLING = re.compile(r"^fling (-?\d+) px/s( \(boosted\))?", re.M)
 COAST = re.compile(r"^coast (-?\d+) px/s: (-?\d+) px in (\d+) ms, (\d+) frames(, at the end)?",
                    re.M)
 CAUGHT = re.compile(r"^coast -?\d+ px/s: caught at", re.M)
+FMSTAT = re.compile(r"^fmstat (\d+) kHz: present (\d) tuned (\d) stereo (\d) "
+                    r"rssi (\d+( \(backlight off\))?); rds pi ([0-9a-f]{4}) '(.*)'$", re.M)
+FM_FLOOR_DBFS = -35.0   # quieter Line In seconds are not the radio (~-16 dBFS RMS at 0 dB)
 
 
 class SoakSuite(Suite):
@@ -240,6 +243,43 @@ def flick(step: StepContext) -> Outcome:
     out.problems += [f"coast {v} px/s at {fps} fps" for v, fps in rates if fps < FLICK_FPS]
     if len(coasts) < 3:
         out.problems.append(f"{len(coasts)} coasts ended of 3 or more")
+    return out
+
+
+@scenario("fm-station", suite="soak", area="fm", weight=1, needs={"fm"})
+def fm_station(step: StepContext) -> Outcome:
+    """The radio screen on the workspace's reference station ([fm] station
+    in kHz, pi its RDS PI): tuned there with the station's PI decoded, which
+    proves the tuner's reference clock (fm-radio.md); on Line In, when it
+    runs, the monitor at 0 dB without an ADC overload wrap (fmcheck)"""
+    conf = step.target.ws.section("fm")
+    khz, pi = conf.integer("station", 0), conf.string("pi", "").lower()
+    if not khz:
+        return Outcome(note="skipped: no [fm] station in the workspace", skipped=True)
+    # read before the backlight goes off, which leaves the RSSI unread
+    b = boot(step, 40, "12000",
+             settings={**WIRED, "volume": "0", "sh": f"radio {khz}", "then": "fmstat"})
+    out = b.outcome
+    if out.lost:
+        return out
+    if not (m := FMSTAT.search(out.output)):
+        out.problems.append("no fmstat line")
+        return out
+    _, present, tuned, stereo, rssi, _, got, name = m.groups()
+    out.note = f"rssi {rssi}, stereo {stereo}, pi {got} {name.strip()!r}"
+    if present != "1" or tuned != "1":
+        out.problems.append(f"not tuned to {khz} kHz (present {present}, tuned {tuned})")
+    if pi and got != pi:
+        out.problems.append(f"RDS PI {got} at {khz} kHz, not {pi}: the reference clock?")
+    if linein.running(directory := linein.directory(step.target.ws)):
+        x, rate = linein.recording(directory, b.t0, b.t1, floor_dbfs=FM_FLOOR_DBFS)
+        if not rate:
+            out.problems.append("no radio on Line In")
+            return out
+        c = fmcheck.check_frames(x, rate)
+        out.note += f"; Line In {c.seconds:.0f} s, peak {c.peak_dbfs:.1f} dBFS"
+        if c.wraps:
+            out.problems.append(f"{c.wraps} overload wraps (at {c.wrap_times} s)")
     return out
 
 

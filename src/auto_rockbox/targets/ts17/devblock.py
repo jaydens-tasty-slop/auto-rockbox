@@ -46,6 +46,7 @@ SETTINGS: Mapping[str, tuple[str, ...] | None] = {
     "play": None, "ls": None, "monitor": None, "sdlog": ("0", "1"),
     "poweroff": ("real",), "crash": ("udf", "panic"),
     "sdtest": None, "sh": None,     # dev_boot: an SD write/read check, shell commands
+    "then": None,                   # shell commands once the key script is done
     "memtest": None,                # dev_boot: KiB of the buffer heap written and read back
 }
 

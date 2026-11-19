@@ -341,6 +341,22 @@ def between(seconds: Iterable[Second], since: datetime, until: datetime) -> list
     return [s for s in seconds if since <= s.published <= until]
 
 
+def recording(directory: Path, since: datetime, until: datetime, *,
+              floor_dbfs: float | None = None, lag: float = LAG_S) -> tuple[np.ndarray, int]:
+    """The frames (n, channels; full-scale units) of the seconds published
+    LAG after SINCE..UNTIL, joined, and their rate; with FLOOR_DBFS, only
+    the seconds whose RMS reaches it (the programme, not the silence around
+    it). No frames: an empty array and rate 0."""
+    shift = timedelta(seconds=lag)
+    parts = [s.samples() for s in between(history(directory), since + shift, until + shift)]
+    if floor_dbfs is not None:
+        floor = 10 ** (floor_dbfs / 20)
+        parts = [(x, r) for x, r in parts if float(np.sqrt((x ** 2).mean())) >= floor]
+    if not parts:
+        return np.zeros((0, 2)), 0
+    return np.concatenate([x for x, _ in parts]), parts[0][1]
+
+
 def by_seq(seconds: Iterable[Second], first: int, last: int) -> list[Second]:
     """Seconds FIRST..LAST; where an earlier run left the same number, the newest"""
     newest = {s.seq: s for s in seconds if first <= s.seq <= last}

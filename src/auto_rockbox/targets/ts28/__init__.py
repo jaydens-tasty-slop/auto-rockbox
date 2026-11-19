@@ -50,7 +50,7 @@ class Ts28(Ts17):
     key_letters = "BSMVvP"
     # Grows as the drivers come up (docs/ts28/checklist.md); the battery
     # reading and the charger guard are the chip's, as on the TS17
-    capabilities = frozenset({"battery", "storage", "framebuffer", "touch"})
+    capabilities = frozenset({"battery", "storage", "framebuffer", "touch", "fm"})
     dev_dir = "/ts28test"
     model_tag: ClassVar[str] = "xlx_TS28"   # NOR 0x1338 (Lark fact L-F-0018)
     usb_product: ClassVar[str | None] = "0003"     # ts28.h
