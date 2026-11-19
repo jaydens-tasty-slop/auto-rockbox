@@ -27,6 +27,8 @@ def run(target: Target, req: RunRequest, shots: Path | None = None) -> RunResult
     """With SHOTS: webcam frames go there during the run, then fb.png and a
     contact sheet (sheet.png) of both"""
     target.check_keys(req.keys)
+    if shots:
+        camera.check_fresh(target.ws)
     with target.lock():
         target.before_run(req)
         target.launch(req)
