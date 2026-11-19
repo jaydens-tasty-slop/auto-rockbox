@@ -117,7 +117,8 @@ the workspace's `[plugins] modules`.
   `storage` (`mass_storage()` yields the card's block device), `touch`
   (key scripts may touch the panel: `@X:Y`, `@X:Y>X2:Y2`, keys.py), `fm`
   (the dev shell's `radio` and `fmstat`, and the `then=` run setting: the
-  soak's `fm-station` against the workspace's `[fm]` station), `mic` (a
+  soak's `fm-station` against the workspace's `[fm]` station, `fm-scan`
+  with the shell's `fmscan`), `mic` (a
   built-in mic the dev shell's `rec SECONDS NAME mic mono` records: the
   soak's `mic-record`), and `usb-poweroff` (the build powers off with USB attached,
   HAVE_POWEROFF_WHILE_CHARGING: the soak's power-off test can run on the

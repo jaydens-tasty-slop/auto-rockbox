@@ -80,7 +80,7 @@ def test_registered() -> None:
     yp3 = SoakSuite(Yp3(ws), Path("x.elf"), shots=False)
     assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff", "flick": "needs touch",
                                     "fm-station": "needs fm", "fm-record": "needs fm",
-                                    "mic-record": "needs mic"}
+                                    "fm-scan": "needs fm", "mic-record": "needs mic"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert ({n for n, s in ts17.items() if s.targets is None}
             == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay", "backlight", "keys",
@@ -268,6 +268,30 @@ def test_fm_record() -> None:
     assert check(6.0, 0.3).problems == ["the file holds 6.0 s of the 10.0 s recorded"]
     assert check(10.0, 0.3, "rec: warnings 1 at 500 ms\nrec: 10000 ms recorded\n").problems == [
         "rec: warnings 1 at 500 ms"]
+
+
+def test_fm_scan() -> None:
+    """fm-scan: the reference station found; a station list's misses and
+    extras, or too many without one, are problems"""
+    def scan(found: list[int], fm: dict[str, object]) -> Outcome:
+        log = "".join(f"fmscan {f} kHz\n" for f in found) + f"fmscan: {len(found)} stations\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            p = LogPlayer(Workspace(Path(tmp), {"fm": fm}), lambda req: log + RETURN)
+            with mock.patch.object(LogPlayer, "capabilities", frozenset({"fm"})):
+                suite = SoakSuite(p, Path("x.elf"), shots=False)
+                ctx = engine.StepContext(1, "fm-scan", p, suite, random.Random(1), Path(tmp),
+                                         datetime.now())
+                out = engine.scenarios_for(suite)["fm-scan"].fn(ctx)
+            assert p.requests[0].settings["then"] == "fmscan"
+            return out
+    out = scan([88100, 94900, 101500], {"station": 94900})
+    assert out.problems == [] and out.note == "3 stations: 88.1 94.9 101.5"
+    assert scan([88100], {"station": 94900}).problems == [
+        "the reference station 94900 kHz not found: the reference clock?"]
+    assert scan(list(range(87900, 108000, 200)), {"station": 94900}).problems == [
+        "101 stations: the station test passes anything?"]
+    assert scan([88100, 94900, 99900], {"station": 94900, "stations": [88100, 101500]}
+                ).problems == ["not found: [101500]", "found off the station list: [99900]"]
 
 
 def test_mic_record() -> None:

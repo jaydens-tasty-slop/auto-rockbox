@@ -58,7 +58,9 @@ How to check it, in minutes, not weeks:
   known clock (the SoC's own timers).
 - **Scan with FM_TRUE**: with the right reference, the driver's own
   station test marks the real stations (20 here). With a wrong reference,
-  it marks none.
+  it marks none. The soak's `fm-scan` runs it (the dev shell's `fmscan`);
+  list the local stations in the workspace (`[fm] stations`, kHz) to
+  check it finds those and only those.
 - Then **listen against a phone on the same station**, back to back. The
   user's A/B found the bass distortion, and confirmed it gone after the
   fix.

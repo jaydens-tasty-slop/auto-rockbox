@@ -59,6 +59,12 @@ class Section:
             raise ConfigError(f"[{self.name}] {key}: an integer is needed")
         return v
 
+    def integers(self, key: str, default: list[int] | None = None) -> list[int]:
+        v = self.data.get(key, default)
+        if not isinstance(v, list) or not all(isinstance(x, int) for x in v):
+            raise ConfigError(f"[{self.name}] {key}: a list of integers is needed")
+        return v
+
     def number(self, key: str, default: float | None = None) -> float:
         v = self.data.get(key, default)
         if not isinstance(v, int | float):

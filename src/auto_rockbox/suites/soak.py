@@ -61,6 +61,9 @@ CAUGHT = re.compile(r"^coast -?\d+ px/s: caught at", re.M)
 FMSTAT = re.compile(r"^fmstat (\d+) kHz: present (\d) tuned (\d) stereo (\d) "
                     r"rssi (\d+( \(backlight off\))?); rds pi ([0-9a-f]{4}) '(.*)'$", re.M)
 FM_FLOOR_DBFS = -35.0   # quieter Line In seconds are not the radio (~-16 dBFS RMS at 0 dB)
+FMSCAN = re.compile(r"^fmscan (\d+) kHz$", re.M)
+FMSCAN_DONE = re.compile(r"^fmscan: (\d+) stations$", re.M)
+FM_SCAN_MAX = 40        # more "stations" than this in a band of ~100 steps: a test that passes all
 FM_RECORD_S = 10        # the fm-record step's recording
 FM_RECORD_NAME = "arb-fmrec"    # its file in the dev folder (.wav)
 MIC_RECORD_S = 12       # the mic-record step's recording
@@ -473,6 +476,39 @@ def fm_station(step: StepContext) -> Outcome:
         out.note += f"; Line In {c.seconds:.0f} s, peak {c.peak_dbfs:.1f} dBFS"
         if c.wraps:
             out.problems.append(f"{c.wraps} overload wraps (at {c.wrap_times} s)")
+    return out
+
+
+@scenario("fm-scan", suite="soak", area="fm", weight=1, needs={"fm"})
+def fm_scan(step: StepContext) -> Outcome:
+    """The tuner's station test across the band (the shell's fmscan, the FM
+    screen's preset scan): it finds the workspace's reference station ([fm]
+    station, kHz). With [fm] stations, the local stations in kHz, it finds
+    those and only those; without, no more than 40 (a test that passes
+    anything). A wrong reference clock finds none (fm-radio.md)"""
+    conf = step.target.ws.section("fm")
+    khz = conf.integer("station", 0)
+    if not khz:
+        return Outcome(note="skipped: no [fm] station in the workspace", skipped=True)
+    local = set(conf.integers("stations", []))
+    b = boot(step, 60, "8000", settings={**WIRED, "sh": f"radio {khz}", "then": "fmscan"})
+    out = b.outcome
+    if out.lost:
+        return out
+    if not FMSCAN_DONE.search(out.output):
+        out.problems.append("no fmscan result")
+        return out
+    found = [int(f) for f in FMSCAN.findall(out.output)]
+    out.note = f"{len(found)} stations: " + " ".join(f"{f / 1000:g}" for f in found)
+    if khz not in found:
+        out.problems.append(f"the reference station {khz} kHz not found: the reference clock?")
+    if local:
+        if missing := sorted(local - set(found) - {khz}):
+            out.problems.append(f"not found: {missing}")
+        if extra := sorted(set(found) - local - {khz}):
+            out.problems.append(f"found off the station list: {extra}")
+    elif len(found) > FM_SCAN_MAX:
+        out.problems.append(f"{len(found)} stations: the station test passes anything?")
     return out
 
 
