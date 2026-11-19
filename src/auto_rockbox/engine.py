@@ -48,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .target import Target
 
+SAME_ERROR_STOP = 3     # steps in a row that raise the same error end a run
 # What a scenario tests, in the order a test pass runs them: bring-up's
 # drivers (skills/bring-up.md, Phase 3), then what builds on them
 AREAS = ("boot", "lcd", "keys", "storage", "audio", "power", "usb", "rtc", "record", "fm",
@@ -252,15 +253,18 @@ def _steps(suite: Suite, out: Path, table: dict[str, Scenario], names: Iterator[
     echo(head)
     suite.start(out)
     steps: list[Step] = []
+    errors: list[str] = []      # the errors of the last steps, when each raised one
     with (out / "steps.jsonl").open("a") as log:
         for name in names:
             ctx = StepContext(len(steps) + 1, name, suite.target, suite, rng, out, start)
             t0 = time.time()
             try:
                 outcome = table[name].fn(ctx)
+                errors.clear()
             except Exception as e:
                 outcome = Outcome([f"{suite.name} error {e!r}"],
                                   output=traceback.format_exc())
+                errors.append(repr(e))
             if not outcome.lost:
                 outcome.problems += suite.check(ctx, outcome)
             ctx.path(".txt").write_text(outcome.output)
@@ -276,6 +280,10 @@ def _steps(suite: Suite, out: Path, table: dict[str, Scenario], names: Iterator[
             echo(f"{st.step:3d} {name:8} {verdict(st):4} {st.note} "
                  f"{'; '.join(st.problems)[:200]}".rstrip())
             if outcome.lost and not suite.recover(ctx, outcome):
+                break
+            if len(errors) >= SAME_ERROR_STOP and len(set(errors[-SAME_ERROR_STOP:])) == 1:
+                echo(f"stopped: the same error {SAME_ERROR_STOP} steps running (the host's, "
+                     "not the player's: a step that errors at once would spin)")
                 break
     suite.finish(out, steps)
     lost = bool(steps) and steps[-1].problems[:1] == ["LOST"]

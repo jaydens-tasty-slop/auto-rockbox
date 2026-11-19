@@ -54,6 +54,17 @@ class Ts28(Ts17):
     dev_dir = "/ts28test"
     model_tag: ClassVar[str] = "xlx_TS28"   # NOR 0x1338 (Lark fact L-F-0018)
     usb_product: ClassVar[str | None] = "0003"     # ts28.h
+    # Plugins play in the touch grid (thirds of the panel: @40:53 top left,
+    # @120:160 centre): Back quits, Play pauses; Snake and Rockblox open on
+    # a menu (Play takes its first row, volume up wraps to Quit)
+    games: ClassVar[dict[str, str]] = {
+        "games/pong.rock": "12000 @40:53+ @40:266+ @200:53+ @200:266+ 2000 B",
+        # down and right: away from the walls (it starts near the top left)
+        "games/snake.rock": "12000 S 2000 @120:266 1000 @200:160 1000 @120:266 1000 @200:160 "
+                            "2000 B 1500 V 500 S",
+        "games/rockblox.rock": "12000 S 2000 @40:160 @200:160 @40:266 @120:160 2000 B 1500 V "
+                               "500 S",
+    }
 
     def _framebuffer_bytes(self, addr: int, size: int) -> bytes:
         """The framebuffer is in PSRAM: the gadget maps it again, discards the

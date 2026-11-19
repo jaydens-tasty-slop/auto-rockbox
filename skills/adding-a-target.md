@@ -129,6 +129,9 @@ the workspace's `[plugins] modules`.
   (boot, crash, sdtest, tone, ...) run as soon as `launch`, `wait_return`
   and `read_log` work, judged by `return_line`; `arb myplayer test` lists
   what else needs a capability or the dev shell ([testing.md](testing.md)).
+- **Games**: `games`, each MVP game's plugin under `.rockbox/rocks` with a
+  key script that starts it from its menu, plays it and quits with the
+  player's keys (the soak's `games`; a player without them skips it).
 - **Soak scenarios of its own**:
   `@scenario("radio", suite="soak", area="fm", target={"myplayer"})`, for
   what follows its menus and key paths. Prefer a generic scenario that

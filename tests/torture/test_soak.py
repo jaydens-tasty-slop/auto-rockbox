@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
-from auto_rockbox import card, engine
+from auto_rockbox import card, engine, keys, registry
 from auto_rockbox.engine import Outcome
 from auto_rockbox.lock import DeviceLock
 from auto_rockbox.suites import soak
@@ -22,7 +22,7 @@ from auto_rockbox.targets.yp3 import Yp3
 from auto_rockbox.workspace import Workspace
 
 RETURN = "dev return: on time"
-GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone"}
+GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone", "games"}
 
 
 class LogPlayer(Target):
@@ -73,9 +73,11 @@ def test_registered() -> None:
         table = engine.scenarios_for(SoakSuite(LogPlayer(ws, str), Path("x.elf"), shots=False))
     assert set(table) == GENERIC - {"fsck", "poweroff"}
     yp3 = SoakSuite(Yp3(ws), Path("x.elf"), shots=False)
-    assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff"}
+    assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff",
+                                    "flick": "needs touch", "fm-station": "needs fm"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
-    assert {n for n, s in ts17.items() if s.targets is None} == {"crash", "sdtest", "fsck"}
+    assert ({n for n, s in ts17.items() if s.targets is None}
+            == {"crash", "sdtest", "fsck", "games"})
     assert all(ts17[n].targets == {"ts17"} for n in ("boot", "tone", "poweroff"))
 
 
@@ -123,10 +125,10 @@ def test_fsck() -> None:
     @mock.patch.object(LogPlayer, "mass_storage", create=True)
     def check(clean: bool, ms: mock.MagicMock) -> Outcome:
         ms.return_value.__enter__.return_value = Path("/dev/sdx1")
-        with mock.patch.object(card, "check", return_value=clean):
+        with mock.patch.object(card, "check", return_value=card.Check(clean)):
             return run("fsck", str)[0]
     assert check(True).problems == []
-    assert check(False).problems == ["fsck: ERRORS (udisks' check failed)"]
+    assert check(False).problems == [card.Check(False).describe()]
 
 
 def test_tone_needs_the_capture() -> None:
@@ -139,3 +141,73 @@ def test_tone_needs_the_capture() -> None:
     assert (out.problems, out.note) == ([], "10 tone s")
     assert p.requests[0].settings == {"bluetooth": "off", "volume": "-20",
                                       "play": "/devdir/tone.mp3"}
+
+
+def test_games() -> None:
+    """Each game in turn by step, run at boot with its script: PLUGIN_OK
+    passes; a game the keys cannot leave, or one that never started, fails"""
+    pong = "/.rockbox/rocks/games/pong.rock"
+    games = {"games/pong.rock": "S D", "games/snake.rock": "S S D"}
+
+    def played(log: str) -> tuple[Outcome, LogPlayer]:
+        with mock.patch.object(LogPlayer, "games", games):
+            return run("games", lambda req: log + RETURN)
+    out, p = played(f"run {pong}\nrun {pong}: rc 0\n")
+    assert (out.problems, out.note) == ([], "games/pong.rock")
+    assert (p.requests[0].settings, p.requests[0].keys) == ({"sh": f"run {pong}"}, "S D")
+    assert played(f"run {pong}\n")[0].problems == [
+        "did not quit with the player's keys (a keymap bug?)"]
+    assert played(f"run {pong}\nrun {pong}: rc -1\n")[0].problems == [
+        "returned -1, not PLUGIN_OK"]
+    assert played("")[0].problems == ["the game did not start"]
+    out, p = run("games", str)
+    assert out.skipped and not p.requests
+
+
+def test_game_scripts_fit() -> None:
+    """Every player's game scripts are key scripts its firmware takes"""
+    ws = Workspace(Path("/nonexistent"))
+    for cls in registry.targets().values():
+        t = cls(ws)
+        for rock, script in t.games.items():
+            assert len(script) <= t.keys_max, rock
+            keys.check_script(script, t.key_letters, t.key_suffixes,
+                              (t.lcd.width, t.lcd.height) if "touch" in t.capabilities else None)
+
+
+def test_shots_need_the_webcam() -> None:
+    """A run with shots checks the webcam publisher before its first step"""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = LogPlayer(Workspace(Path(tmp)), str)
+        with mock.patch.object(soak.camera, "check_fresh") as fresh:
+            SoakSuite(p, Path("x.elf"), shots=False).start(Path(tmp))
+            fresh.assert_not_called()
+            SoakSuite(p, Path("x.elf"), shots=True).start(Path(tmp))
+            fresh.assert_called_once()
+
+
+def test_the_same_error_ends_a_run() -> None:
+    """Steps that raise the same error three times running end the run
+    instead of spinning until its deadline; an error between good steps
+    does not"""
+    calls: list[int] = []
+
+    def broken(step: engine.StepContext) -> Outcome:
+        calls.append(step.index)
+        raise OSError("no webcam")
+
+    def flaky(step: engine.StepContext) -> Outcome:
+        if step.index % 2:
+            raise OSError("once")
+        return Outcome()
+    lines: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        p = LogPlayer(Workspace(Path(tmp)), str)
+        suite = SoakSuite(p, Path("x.elf"), shots=False)
+        for fn, n in ((broken, 3), (flaky, 8)):
+            table = {"x": engine.Scenario("x", fn, "soak", "boot")}
+            steps = engine._steps(suite, Path(tmp) / fn.__name__, table, iter(["x"] * 8),
+                                  rng=random.Random(1), echo=lines.append, head="")
+            assert len(steps) == n, fn.__name__
+    assert calls == [1, 2, 3]
+    assert any(line.startswith("stopped: the same error 3 steps running") for line in lines)

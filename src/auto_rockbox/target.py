@@ -97,6 +97,11 @@ class Target(ABC):
     # Log lines of this player's drivers that mean a failure, on top of
     # Rockbox's own (a regex)
     log_faults: ClassVar[str] = ""
+    # The games every build must ship working (a plugin under the card's
+    # .rockbox/rocks, e.g. games/pong.rock) with a key script that starts a
+    # game from the plugin's own menu, plays it and quits the plugin with the
+    # player's keys (suites/soak.py, games)
+    games: ClassVar[dict[str, str]] = {}
     # Run settings every soak boot gets unless --set or the step says otherwise
     soak_settings: ClassVar[dict[str, str]] = {}
     # The dev build's folder on the card (its DEV_CARD_DIR): the test tone

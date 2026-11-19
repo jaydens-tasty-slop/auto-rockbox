@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from .. import card, engine, fmcheck, linein
+from .. import camera, card, engine, fmcheck, linein
 from ..engine import Outcome, StepContext, Suite, scenario
 from ..errors import ArbError
 from ..registry import Context, arg, command
@@ -52,6 +52,8 @@ CAUGHT = re.compile(r"^coast -?\d+ px/s: caught at", re.M)
 FMSTAT = re.compile(r"^fmstat (\d+) kHz: present (\d) tuned (\d) stereo (\d) "
                     r"rssi (\d+( \(backlight off\))?); rds pi ([0-9a-f]{4}) '(.*)'$", re.M)
 FM_FLOOR_DBFS = -35.0   # quieter Line In seconds are not the radio (~-16 dBFS RMS at 0 dB)
+ROCKS = "/.rockbox/rocks"
+GAME_S = 45             # a game step's run time: the boot, the script and a margin
 
 
 class SoakSuite(Suite):
@@ -66,6 +68,10 @@ class SoakSuite(Suite):
         self.settings = {**target.soak_settings, **(settings or {})}
         extra = target.log_faults
         self.faults = re.compile(FAULTS + (f"|{extra}" if extra else ""), re.I)
+
+    def start(self, out: Path) -> None:
+        if self.shots:      # every step would fail on it at once
+            camera.check_fresh(self.target.ws)
 
 
 def suite(step: StepContext) -> SoakSuite:
@@ -280,6 +286,33 @@ def fm_station(step: StepContext) -> Outcome:
         out.note += f"; Line In {c.seconds:.0f} s, peak {c.peak_dbfs:.1f} dBFS"
         if c.wraps:
             out.problems.append(f"{c.wraps} overload wraps (at {c.wrap_times} s)")
+    return out
+
+
+@scenario("games", suite="soak", area="plugins", weight=1)
+def games(step: StepContext) -> Outcome:
+    """One of the player's games (Target.games, in turn by step), run from
+    the shell at boot and played by its script, which quits it with the
+    player's keys: the plugin returns PLUGIN_OK (a game that the keys
+    cannot leave is a keymap bug) and the log stays clean"""
+    t = step.target
+    if not t.games:
+        return Outcome(note=f"skipped: {t.name} lists no games", skipped=True)
+    rock, script = sorted(t.games.items())[(step.index - 1) % len(t.games)]
+    path = f"{ROCKS}/{rock}"
+    b = boot(step, GAME_S, script, settings={"sh": f"run {path}"})
+    out = b.outcome
+    out.note = rock
+    if out.lost:
+        return out
+    run = re.escape(f"run {path}")      # dev_shell.c ui_run_request's lines
+    rc = re.search(rf"^{run}: rc (-?\d+)$", out.output, re.M)
+    if not re.search(rf"^{run}$", out.output, re.M):
+        out.problems.append("the game did not start")
+    elif not rc:
+        out.problems.append("did not quit with the player's keys (a keymap bug?)")
+    elif rc.group(1) != "0":
+        out.problems.append(f"returned {rc.group(1)}, not PLUGIN_OK")
     return out
 
 

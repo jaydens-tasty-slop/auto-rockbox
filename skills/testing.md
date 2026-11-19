@@ -160,7 +160,7 @@ def sdtest(step: StepContext) -> Outcome:
   itself passed.
 
 Every player's soak scenarios (`suites/soak.py`: boot, crash, poweroff,
-sdtest, fsck, tone, flick) use only the run settings every dev build takes
+sdtest, fsck, tone, flick, fm-station, games) use only the run settings every dev build takes
 (`dev_boot`: `sdtest=`, `crash=`, `poweroff=`, `play=`, `sh=`, ...) and the
 Target API, so they run on a player whose dev shell doesn't work yet. A
 player's own (`targets/NAME/soak.py`) follow its menus, and one of the same
@@ -173,6 +173,17 @@ fling, taps on a coasting list caught, nothing opened, coasts at 30 fps or
 more. Keep a touch test's points off the list's edges and off a mini player
 (the bottom fifth while music plays): a drag that starts there isn't the
 list's, and a tap there is the theme's.
+
+The games a build must ship are the Target's `games`: each plugin with a
+key script that starts a game from its menu, plays it and quits with the
+player's keys. `games` runs one per step, in turn (`--only games` covers
+them all in as many steps), from `sh=run` at boot, and fails a game that
+never started or that the keys could not leave (no `rc 0`): a keymap bug.
+
+A step that raises an error comes back at once, so the same error three
+steps running ends the run rather than spinning until its deadline (a
+stale webcam once wrote 880,000 empty steps); `--shots` checks the webcam
+publisher before the first step.
 
 ### Torture suites
 
