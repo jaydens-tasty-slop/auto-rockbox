@@ -3,7 +3,7 @@
 
 The boot ROM, the boot chain (byte-identical to the TS17's), the flash layout
 (stock's application at NOR 0x14000, which our image replaces behind the
-same frozen rescue stub) and the dev loop's transport are the TS17's, so this
+same pinned rescue stub) and the dev loop's transport are the TS17's, so this
 is the TS17's target with the TS28's board: its model text (checked before
 every write: both players are 10d6:10d6 in download mode), panel, keys and
 dev build. Bring-up state: docs/ts28/ in the port's tree.

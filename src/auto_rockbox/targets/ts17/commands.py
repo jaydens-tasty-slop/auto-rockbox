@@ -150,7 +150,7 @@ STOCK_DATA_ARG = arg("--stock-data", action="store_true",
                           "with the Bluetooth tables, factory and user settings)")
 RESCUE_ARG = arg("--rescue", action="store_true",
                  help="allow installing the rescue stub at 0x14000 where there is none, "
-                      "or removing it (stock's start); only the frozen stub is written")
+                      "or removing it (stock's start); only the pinned stub is written")
 TS17 = {"ts17"}
 LARK = {"ts17", "ts28"}         # the Lark players: one boot ROM, boot chain and flash layout
 

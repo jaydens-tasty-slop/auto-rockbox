@@ -82,8 +82,8 @@ Each Rockbox run must show all of these:
       (bring-up.md, Ground rules): the power-on key rule with USB in, and the
       debug menu's reboot into recovery mode. A normal power-on press still
       boots, and the rule's hold ends well before the PMU's long-press reset.
-- [ ] **With a rescue stub** (bring-up.md, "freeze it for good"): the
-      candidate's stub hashes to the frozen pin (the build fails
+- [ ] **With a rescue stub** (bring-up.md, "pin it, and freeze it once it
+      ships"): the candidate's stub hashes to the pin (the build fails
       otherwise). The release package holds the firmware alone, after the
       stub, in the bumped package format. The flasher writes its own pinned
       stub on a new install only, stub first, and never asks about it. An

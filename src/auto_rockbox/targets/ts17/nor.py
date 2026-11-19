@@ -39,9 +39,10 @@ BOOT_END = FW0_SYS              # mbrec A/B, the partition tables and fw0_rec en
 XIP_BASE = 0x10000000           # remap entry 0's virtual base, where fw0_sys runs
 RESCUE = FW0_SYS                # the rescue stub's sector, ahead of Rockbox
 RESCUE_MARK = b"RBRS"           # at +8 in the stub
-# The stub is frozen for good (the user, 2026-11-14: never to be touched
-# again): v2, its sector as the CPU reads it. rockslop carries the same
-# bytes, and ts17dev/build.sh fails a build whose stub differs.
+# The stub is pinned: v2, its sector as the CPU reads it. rockslop carries
+# the same bytes, and ts17dev/build.sh fails a build whose stub differs.
+# Until it ships it may be revised (the user, 2026-11-19): new bytes are
+# re-pinned here, there and in rockslop together.
 RESCUE_SHA256 = "aa13ea64f60a71227ae55318f91dac94d0f0e7220b6bf73f98b6067367c44f0f"
 APP = FW0_SYS + SECTOR          # Rockbox, after the stub
 APP_BASE = XIP_BASE + SECTOR    # Rockbox's vector table, after the stub
@@ -150,8 +151,8 @@ def has_rescue(plain: bytes) -> bool:
     return plain[8:12] == RESCUE_MARK
 
 
-def is_frozen_rescue(plain: bytes) -> bool:
-    """PLAIN's first sector is the frozen rescue stub"""
+def is_pinned_rescue(plain: bytes) -> bool:
+    """PLAIN's first sector is the pinned rescue stub"""
     return hashlib.sha256(plain[:SECTOR]).hexdigest() == RESCUE_SHA256
 
 
@@ -219,7 +220,7 @@ def write_cells(s: Session, start: int, cells: bytes, *, boot: bool = False,
     alone to spare wear. Returns how many were rewritten. The boot chain
     takes BOOT, stock's data after fw0_sys STOCK_DATA, installing the stub
     where there is none (or removing it,
-    stock's own start going back) RESCUE. A stub is only ever the frozen
+    stock's own start going back) RESCUE. A stub is only ever the pinned
     one, and Rockbox written on its own needs one stored ahead of it."""
     if start % SECTOR or len(cells) % SECTOR or start + len(cells) > FLASH_SIZE:
         raise Ts17Error("a flash write must be whole 4 KiB sectors inside the flash")
@@ -232,10 +233,10 @@ def write_cells(s: Session, start: int, cells: bytes, *, boot: bool = False,
     if start <= RESCUE < start + len(cells):
         stub = cells[RESCUE - start:RESCUE - start + SECTOR]
         plain = rdm.decode(stub)
-        if has_rescue(plain) and not is_frozen_rescue(plain):
-            raise Ts17Error("this image's rescue stub is not the frozen one (sha256 "
-                            f"{RESCUE_SHA256[:12]}...): the stub never changes, so its "
-                            "rescue-lark.S must not either")
+        if has_rescue(plain) and not is_pinned_rescue(plain):
+            raise Ts17Error("this image's rescue stub is not the pinned one (sha256 "
+                            f"{RESCUE_SHA256[:12]}...): a new stub is re-pinned "
+                            "(RESCUE_SHA256) before it is written")
     s.values(setup(raw=True))
     if stub is not None and not rescue:
         _check_rescue(s, stub)

@@ -105,11 +105,11 @@ def test_write_refuses_before_erasing() -> None:
     assert fake.calls == calls                  # refused before the device
 
 
-def test_only_the_frozen_stub() -> None:
-    # a stub that is not the frozen one, even asked for and even unchanged
+def test_only_the_pinned_stub() -> None:
+    # a stub that is not the pinned one, even asked for and even unchanged
     for stored in (_stub(), bytes(nor.SECTOR)):
         msg = _raises(lambda s=stored: _write(s, nor.FW0_SYS, _stub(), rescue=True))
-        assert "frozen" in msg, msg
+        assert "pinned" in msg, msg
 
 
 def test_rockbox_alone_needs_a_stub() -> None:

@@ -115,8 +115,11 @@ and a fix on one player reads as done for the other.
      mode", so use a clock that a reset keeps and a power-off stops (TS17:
      RTC_0's run bit).
 
-  **Then freeze it for good.** A bad stub on a player that has no other way
-  back is a brick, and a stub that is never rewritten can't go bad:
+  **Then pin it, and freeze it once it ships.** A bad stub on a player that
+  has no other way back is a brick, and a stub that is never rewritten
+  can't go bad. Until the first release a revision is fine (new bytes,
+  re-pinned everywhere at once, the five steps above again on every
+  player); after it, never:
   - Pin its bytes by hash in the dev writer and the user flasher, and fail
     the build if its source assembles to anything else (TS17: `nor.py`
     `RESCUE_SHA256`, `ts17dev/build.sh`).
