@@ -39,6 +39,7 @@ from ...engine import Outcome, StepContext, scenario
 from ...errors import ArbError
 from ...keys import duration_ms
 from ...suites.soak import Boot, boot
+from ...target import Target
 from ...workspace import ConfigError, Workspace
 
 TS17 = {"ts17"}
@@ -310,11 +311,12 @@ def recordings(root: Path, since: datetime) -> tuple[str, list[str]]:
                                           if empty else [])
 
 
-def _round_trip(uuid: str | None, size: int, since: datetime, started: float,
+def _round_trip(target: Target, size: int, since: datetime, started: float,
                 alive: Callable[[], bool]) -> tuple[list[str], str]:
-    """SIZE random bytes onto the card and back: problems and a note"""
+    """SIZE random bytes onto TARGET's card and back: problems and a note"""
+    uuid = target.conf.string("card_uuid", "") or None
     try:
-        dev = card.wait(uuid, CARD_WAIT_S, alive)
+        dev = card.wait(uuid, CARD_WAIT_S, alive, target.usb_product)
     except ArbError as e:
         return [str(e)], ""
     data = os.urandom(size)
@@ -340,12 +342,11 @@ def _round_trip(uuid: str | None, size: int, since: datetime, started: float,
 def usb(step: StepContext) -> Outcome:
     """A boot with Rockbox's USB on: a random 2-12 MiB file written to the
     card and read back, and the recordings this run made hold samples"""
-    uuid = step.target.conf.string("card_uuid", "") or None
     size = step.rng.randint(2, 12) << 20
     started = time.monotonic()
     with ThreadPoolExecutor(1) as pool:
         running = pool.submit(boot, step, USB_S, settings={"usb": "storage"})
-        probs, note = _round_trip(uuid, size, step.run_start, started,
+        probs, note = _round_trip(step.target, size, step.run_start, started,
                                   lambda: not running.done())
         b = running.result()
     b.outcome.problems[:0] = probs

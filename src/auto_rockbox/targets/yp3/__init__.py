@@ -97,6 +97,7 @@ class Yp3(Target):
     lcd = Lcd(128, 160, "rgb565-swapped")
     key_letters = "UDLRS"
     capabilities = frozenset({"shell", "battery", "usb", "storage"})
+    usb_product = SHELL_PID
     return_line = "dev return: watchdog feeds stopped"     # recovery-watchdog-yp3.c
     dev_dir = "/yp3dev"             # yp3.h DEV_CARD_DIR
 
@@ -259,7 +260,7 @@ class Yp3(Target):
             self.launch(req)
             t0, booted = time.monotonic(), self._previous
             try:
-                yield card.wait(uuid, timeout=240,
+                yield card.wait(uuid, timeout=240, product=self.usb_product,
                                 alive=lambda: all(d == booted for d in rom_devices()))
             finally:
                 returned = self.wait_return(t0 + seconds + self.return_margin, lambda: None)

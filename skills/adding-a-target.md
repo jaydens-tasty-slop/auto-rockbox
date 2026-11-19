@@ -87,7 +87,8 @@ class MyPlayer(Target):
     """SoC, flash, how it is reached.
 
     Config ([targets.myplayer] in auto-rockbox.toml):
-        card_uuid   the card's filesystem UUID (default: any Rockbox USB disk)
+        card_uuid   the card's filesystem UUID (default: the USB disk with
+                    this player's IDs, usb_product)
     """
     name = "myplayer"
     summary = "XYZ123, 4 MiB NOR, ROM download mode"

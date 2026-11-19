@@ -2,7 +2,9 @@
 find it, mount it, check it. No root needed.
 
 The card is found by its filesystem UUID (`[targets.NAME] card_uuid`) or, if
-none is set, as the one partition on a USB disk from Rockbox's USB vendor ID.
+none is set, as the first partition on a USB disk with the player's USB IDs
+(Rockbox's vendor ID and the target's product ID: another player on the same
+test vendor ID is never taken for it).
 """
 
 from __future__ import annotations
@@ -29,14 +31,18 @@ def _props(dev: Path) -> dict[str, str]:
     return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
 
 
-def find(uuid: str | None = None, vendor: str = ROCKBOX_VID) -> Path | None:
-    """The card's block device if the PC sees it now"""
+def find(uuid: str | None = None, product: str | None = None,
+         vendor: str = ROCKBOX_VID) -> Path | None:
+    """The card's block device if the PC sees it now: by UUID, or by the
+    player's USB IDs (PRODUCT None: any product of VENDOR)"""
     if uuid:
         p = Path("/dev/disk/by-uuid") / uuid
         return p.resolve() if p.exists() else None
     for b in sorted(Path("/sys/block").glob("sd*")):
         disk = Path("/dev") / b.name
-        if _props(disk).get("ID_VENDOR_ID") != vendor:
+        props = _props(disk)
+        if props.get("ID_VENDOR_ID") != vendor or \
+                (product and props.get("ID_MODEL_ID") != product):
             continue
         parts = sorted(b.glob(f"{b.name}[0-9]*"))
         return Path("/dev") / parts[0].name if parts else disk
@@ -44,11 +50,11 @@ def find(uuid: str | None = None, vendor: str = ROCKBOX_VID) -> Path | None:
 
 
 def wait(uuid: str | None = None, timeout: float = 120,
-         alive: Callable[[], bool] | None = None) -> Path:
+         alive: Callable[[], bool] | None = None, product: str | None = None) -> Path:
     """Until the card shows up; ALIVE (if given) false stops the wait early"""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        dev = find(uuid)
+        dev = find(uuid, product)
         if dev:
             time.sleep(1)               # let udisks see it too
             return dev

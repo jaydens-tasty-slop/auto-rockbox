@@ -51,7 +51,8 @@ class Ts17(Target):
     """Config ([targets.ts17] in auto-rockbox.toml):
         image        the dev build's ELF that `fb` (without one) and the card
                      commands boot (default: <paths.build>/ts17/rockbox.elf)
-        card_uuid    the card's filesystem UUID (default: any Rockbox USB disk)
+        card_uuid    the card's filesystem UUID (default: the USB disk with
+                     this player's IDs, usb_product)
         stock_cells  a `nor dump --raw` of this unit's whole flash, made before
                      the first run: `nor restore` without an image puts stock's
                      fw0_sys back from it (default: none)
@@ -80,7 +81,7 @@ class Ts17(Target):
     key_letters = "UDLRSVvP"     # ring, centre, volume up/down, on/off
     capabilities = frozenset({"framebuffer", "shell", "battery", "cold", "usb", "storage"})
     model_tag: ClassVar[str] = "xlx_58209_TS17_01"  # NOR 0x1338 (nor.model_tag)
-    shell_pid: ClassVar[str] = "0002"   # the dev build's USB product ID (ts17.h)
+    usb_product: ClassVar[str | None] = "0002"     # ts17.h
     return_line = devblock.RETURN_LINE
     dev_dir = "/ts17test"           # ts17.h DEV_CARD_DIR
     log_faults = r"lcd: frame timed out"
@@ -194,7 +195,7 @@ class Ts17(Target):
         return Battery(st.millivolts, st.charging, st.note)
 
     def shell(self) -> Shell:
-        return Shell(self.name, SHELL_VID, self.shell_pid,
+        return Shell(self.name, SHELL_VID, self.usb_product or "",
                      lock_file=self.conf.string("shell_lock", "") or None)
 
     def _card_uuid(self) -> str | None:
@@ -208,7 +209,7 @@ class Ts17(Target):
         """Boots IMAGE (default: config `image`) with usb=storage; holds the
         device lock throughout, as the card commands call this directly"""
         uuid = self._card_uuid()
-        if card.find(uuid):
+        if card.find(uuid, self.usb_product):
             raise Ts17Error("the card is on this PC already: unmount or unplug it first")
         req = RunRequest(image or self.image(), seconds, settings={"usb": "storage"})
         with self.lock():
@@ -216,7 +217,7 @@ class Ts17(Target):
             self.launch(req)
             deadline = self._launched + seconds + self.return_margin
             try:
-                yield card.wait(uuid, alive=lambda: not self._back())
+                yield card.wait(uuid, alive=lambda: not self._back(), product=self.usb_product)
             finally:
                 returned = self.wait_return(deadline, lambda: None)
                 self.after_run(req, returned)

@@ -86,6 +86,9 @@ class Target(ABC):
     key_letters: ClassVar[str]      # letters the firmware's key-script parser takes
     key_suffixes: ClassVar[str] = SUFFIXES
     keys_max: ClassVar[int] = 255   # apps/dev_shell.c keys_script[256]
+    # The dev build's USB product ID on Rockbox's vendor ID (the config's
+    # USB_PRODUCT_ID): its card's disk and its dev shell are found by it
+    usb_product: ClassVar[str | None] = None
     capabilities: ClassVar[frozenset[str]] = frozenset()
     return_margin: ClassVar[float] = 40.0   # seconds past req.seconds before "lost"
     # The log line a dev build writes when it returns on time: without it a
