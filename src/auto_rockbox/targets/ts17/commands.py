@@ -51,12 +51,15 @@ def _progress(msg: str) -> None:
     print(f"\r{msg}", end="", file=sys.stderr, flush=True)
 
 
-def _write(ctx: Context, start: int, cells: bytes, boot: bool, rescue: bool) -> None:
+def _write(ctx: Context, start: int, cells: bytes, args: Namespace,
+           rescue: bool | None = None) -> None:
     with _session(ctx) as s:
         if not isinstance(ctx.t, Unit):
             raise TypeError(f"{ctx.t.name}: not a Lark target")
         ctx.t.check_unit(s)
-        n = nor.write_cells(s, start, cells, boot=boot, rescue=rescue, progress=print)
+        n = nor.write_cells(s, start, cells, boot=args.boot,
+                            rescue=args.rescue if rescue is None else rescue,
+                            stock_data=args.stock_data, progress=print)
     print(f"{n} of {len(cells) // nor.SECTOR} sectors rewritten; "
           f"{start:06x}+{len(cells):x} matches")
 
@@ -121,7 +124,7 @@ def nor_restore(ctx: Context, args: Namespace) -> None:
     end = len(data) if length is None else start + length
     if not start < end <= len(data):
         raise SystemExit(f"{image} ({len(data):#x} bytes) has no {start:#x}-{end:#x}")
-    _write(ctx, start, data[start:end], args.boot, rescue)
+    _write(ctx, start, data[start:end], args, rescue)
 
 
 def nor_program(ctx: Context, args: Namespace) -> None:
@@ -135,14 +138,16 @@ def nor_program(ctx: Context, args: Namespace) -> None:
         nor.check_app(data, args.file.name)
     elif data[:4] == b"\x7fELF" or args.start == nor.FW0_SYS:
         nor.check_image(data, args.file.name)
-    _write(ctx, args.start, nor.pad(rdm.encode(nor.pad(data, rdm.XIP_RUN)), nor.SECTOR),
-           args.boot, args.rescue)
+    _write(ctx, args.start, nor.pad(rdm.encode(nor.pad(data, rdm.XIP_RUN)), nor.SECTOR), args)
 
 
 WINDOW_ARGS = [arg("--raw", action="store_true", help="the stored cells (randomizer off)"),
                arg("--crypt", action="store_true", help="set the remap's crypt bit (31)")]
 BOOT_ARG = arg("--boot", action="store_true",
                help="allow the boot chain below 0x14000 (mbrec, partition tables, fw0_rec)")
+STOCK_DATA_ARG = arg("--stock-data", action="store_true",
+                     help="allow stock's data after fw0_sys (from 0x1bb000: resource files "
+                          "with the Bluetooth tables, factory and user settings)")
 RESCUE_ARG = arg("--rescue", action="store_true",
                  help="allow installing the rescue stub at 0x14000 where there is none, "
                       "or removing it (stock's start); only the frozen stub is written")
@@ -160,10 +165,11 @@ command("nor dump", target=LARK, help="NOR to a file",
 command("nor restore", target=LARK, help="write back a --raw dump (changed sectors only)",
         args=[arg("image", type=Path, nargs="?"),
               arg("start", type=number, nargs="?", default=0),
-              arg("length", type=number, nargs="?"), BOOT_ARG, RESCUE_ARG])(nor_restore)
+              arg("length", type=number, nargs="?"), BOOT_ARG, RESCUE_ARG,
+              STOCK_DATA_ARG])(nor_restore)
 command("nor program", target=LARK, help="write a plain file, encoded for XIP",
         args=[arg("file", type=Path), arg("start", type=number), BOOT_ARG,
-              RESCUE_ARG])(nor_program)
+              RESCUE_ARG, STOCK_DATA_ARG])(nor_program)
 
 
 @command("reboot", target=LARK, help="reset into download mode, or into stock firmware",

@@ -97,6 +97,12 @@ def test_write_refuses_before_erasing() -> None:
     assert "--rescue" in msg and fake.calls == 1, (msg, fake.calls)   # setup only
     msg = _raises(lambda: nor.write_cells(s, 0x4000, bytes(nor.SECTOR)))
     assert "boot chain" in msg, msg
+    # stock's data after fw0_sys (settings, resource files), or reaching into it
+    calls = fake.calls
+    for start, n in ((nor.FW0_SYS_END, 1), (0x3FF000, 1), (nor.FW0_SYS_END - nor.SECTOR, 2)):
+        msg = _raises(lambda a=start, k=n: nor.write_cells(s, a, bytes(k * nor.SECTOR)))
+        assert "stock's data" in msg, msg
+    assert fake.calls == calls                  # refused before the device
 
 
 def test_only_the_frozen_stub() -> None:

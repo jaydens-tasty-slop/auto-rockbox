@@ -10,9 +10,12 @@ Calling ROM code is fine for tooling; Rockbox's flash driver is its own.
 Flash map: the boot chain (mbrec A/B, partition tables, stock's recovery
 image fw0_rec) below 0x14000, which writes refuse unless asked; stock's
 application fw0_sys at 0x14000, which our image replaces (stock comes back by
-restoring it from a dump of the stored cells, `nor dump --raw`). Our image's
-first sector is Rockbox's rescue stub (rescue-lark.S), written once: changing
-it, or putting one there, takes `rescue`.
+restoring it from a dump of the stored cells, `nor dump --raw`); after it,
+stock's data (resource file systems with the Bluetooth tables Rockbox reads
+in place, factory and user settings; each player places them its own way),
+which writes refuse unless asked. Our image's first sector is Rockbox's
+rescue stub (rescue-lark.S), written once: changing it, or putting one
+there, takes `rescue`.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ FLASH_SIZE = 0x400000
 SECTOR = 0x1000                 # erase unit
 FW0_SYS = 0x14000               # stock's application: our image runs from here
 FW0_SYS_SIZE = 0x1A7000
+FW0_SYS_END = FW0_SYS + FW0_SYS_SIZE  # stock's data from here to the end
 BOOT_END = FW0_SYS              # mbrec A/B, the partition tables and fw0_rec end here
 XIP_BASE = 0x10000000           # remap entry 0's virtual base, where fw0_sys runs
 RESCUE = FW0_SYS                # the rescue stub's sector, ahead of Rockbox
@@ -208,17 +212,22 @@ def _check_stub_behind(s: Session) -> None:
 
 
 def write_cells(s: Session, start: int, cells: bytes, *, boot: bool = False,
-                rescue: bool = False, progress: Progress | None = None) -> int:
+                rescue: bool = False, stock_data: bool = False,
+                progress: Progress | None = None) -> int:
     """Makes flash at START match CELLS: per sector, read what is stored and
     if it differs erase, program and verify. Identical sectors are left
     alone to spare wear. Returns how many were rewritten. The boot chain
-    takes BOOT, installing the stub where there is none (or removing it,
+    takes BOOT, stock's data after fw0_sys STOCK_DATA, installing the stub
+    where there is none (or removing it,
     stock's own start going back) RESCUE. A stub is only ever the frozen
     one, and Rockbox written on its own needs one stored ahead of it."""
     if start % SECTOR or len(cells) % SECTOR or start + len(cells) > FLASH_SIZE:
         raise Ts17Error("a flash write must be whole 4 KiB sectors inside the flash")
     if start < BOOT_END and not boot:
         raise Ts17Error(f"the range touches the boot chain (below {BOOT_END:#x})")
+    if start + len(cells) > FW0_SYS_END and not stock_data:
+        raise Ts17Error(f"the range touches stock's data after fw0_sys (from {FW0_SYS_END:#x}: "
+                        "resource files, factory and user settings)")
     stub = None
     if start <= RESCUE < start + len(cells):
         stub = cells[RESCUE - start:RESCUE - start + SECTOR]
