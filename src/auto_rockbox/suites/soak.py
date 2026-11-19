@@ -68,6 +68,7 @@ BACKLIGHT_HOLD_S = 10   # the shell's backlight: seconds a step
 BACKLIGHT_LIT = 40      # grey levels from off to full that make a camera pixel the panel's
 BACKLIGHT_PANEL = 1000  # fewer such pixels (frames shrunk 4 times): the panel never lit
 HZ = 100                # Rockbox's tick
+KEYLOG = re.compile(r"^buttons ([0-9a-f]+)(?: \(adc -?\d+\))?(?: at tick (\d+))?$", re.M)
 USB_HASH_FILE = "arb-usbhash.bin"
 GAME_S = 45             # a game step's run time: the boot, the script and a margin
 
@@ -296,6 +297,48 @@ def backlight(step: StepContext) -> Outcome:
     if len(seen) > 1 and seen[1][1] - seen[0][1] < 10:
         out.problems.append(f"brightness {seen[1][0]} hardly lit ({seen[1][1] - seen[0][1]:.1f} "
                             "over off)")
+    return out
+
+
+def key_presses(log: str) -> list[tuple[int, int | None]]:
+    """The presses in a keylog: each state the buttons took from none until
+    they were none again, with how long in ticks (None without ticks)"""
+    out: list[tuple[int, int | None]] = []
+    start: tuple[int, int | None] | None = None
+    for state, tick in ((int(x, 16), int(t) if t else None) for x, t in KEYLOG.findall(log)):
+        if state and start is None:
+            start = (state, tick)
+        elif not state and start is not None:
+            out.append((start[0], tick - start[1] if tick is not None and start[1] is not None
+                        else None))
+            start = None
+    return out
+
+
+@scenario("keys", suite="soak", area="keys", weight=1)
+def keys(step: StepContext) -> Outcome:
+    """Every key through the key script as the button driver reports it
+    (the shell's keylog at boot, before the UI takes keys): each tap a state
+    of its own that goes back to none, the first key held a second"""
+    letters = list(dict.fromkeys(step.target.key_letters))
+    script = "3000 " + " 400 ".join(letters) + f" 600 {letters[0]}+ 1000"
+    out = boot(step, 40, script, settings={"sh": "keylog 20"}).outcome
+    if out.lost:
+        return out
+    presses = key_presses(out.output)
+    if len(presses) != len(letters) + 1:
+        out.problems.append(f"{len(presses)} presses in the keylog of {len(letters) + 1}")
+        return out
+    taps = {c: state for c, (state, _) in zip(letters, presses, strict=False)}
+    out.note = ", ".join(f"{c} {state:x}" for c, state in taps.items())
+    for c, state in taps.items():
+        if same := [d for d, other in taps.items() if other == state and d < c]:
+            out.problems.append(f"{c} reads as {same[0]} ({state:x})")
+    held, ticks = presses[-1]
+    if held != taps[letters[0]]:
+        out.problems.append(f"{letters[0]} held read {held:x}, tapped {taps[letters[0]]:x}")
+    if ticks is not None and not 0.9 * HZ <= ticks <= 1.5 * HZ:
+        out.problems.append(f"{letters[0]} held {ticks} ticks, not a second")
     return out
 
 

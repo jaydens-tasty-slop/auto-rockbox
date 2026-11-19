@@ -26,7 +26,7 @@ from auto_rockbox.workspace import Workspace
 
 RETURN = "dev return: on time"
 GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone", "games", "usb-hash",
-           "udelay", "backlight"}
+           "udelay", "backlight", "keys"}
 
 
 class LogPlayer(Target):
@@ -81,7 +81,7 @@ def test_registered() -> None:
                                     "flick": "needs touch", "fm-station": "needs fm"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert ({n for n, s in ts17.items() if s.targets is None}
-            == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay", "backlight"})
+            == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay", "backlight", "keys"})
     assert all(ts17[n].targets == {"ts17"} for n in ("boot", "tone", "poweroff"))
 
 
@@ -225,6 +225,28 @@ def test_backlight_judging() -> None:
         "no frame inside brightness 3", "brightness 1 hardly lit (3.0 over off)"]
     with mock.patch.object(soak.camera, "check_fresh", side_effect=soak.camera.CameraError("x")):
         assert run("backlight", str)[0].skipped
+
+
+def test_keys() -> None:
+    """Each letter tapped and the first held, read back from the keylog: a
+    tap that reads as another key, a lost press or a short hold fails"""
+    def keylog(states: list[int], hold: int = 100) -> Callable[[RunRequest], str]:
+        lines, tick = [], 300
+        for i, st in enumerate(states):
+            lines += [f"buttons {st:x} at tick {tick}",
+                      f"buttons 0 at tick {tick + (hold if i == len(states) - 1 else 15)}"]
+            tick += 60 if i < len(states) - 1 else hold + 10
+        return lambda req: "\n".join(lines) + "\n" + RETURN
+    out, p = run("keys", keylog([1, 2, 4, 8, 16, 1]))
+    assert out.problems == [] and out.note == "U 1, D 2, L 4, R 8, S 10"
+    assert p.requests[0].keys == "3000 U 400 D 400 L 400 R 400 S 600 U+ 1000"
+    assert p.requests[0].settings == {"sh": "keylog 20"}
+    assert run("keys", keylog([1, 2, 2, 8, 16, 1]))[0].problems == ["L reads as D (2)"]
+    assert run("keys", keylog([1, 2, 4, 8, 1]))[0].problems == [
+        "5 presses in the keylog of 6"]
+    assert run("keys", keylog([1, 2, 4, 8, 16, 1], hold=30))[0].problems == [
+        "U held 30 ticks, not a second"]
+    assert soak.key_presses("buttons 4 (adc 812)\nbuttons 0 (adc 4000)\n") == [(4, None)]
 
 
 def test_tone_needs_the_capture() -> None:
