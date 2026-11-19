@@ -52,6 +52,12 @@ has one: `arb TARGET sh CMD` sends one command. On the YP3,
 takes a screenshot over the shell. A sleeping LCD shows its last frame, so
 send a key first.
 
+A boot with no return has one way back without a hand: the shell's `rom`
+(`arb TARGET sh rom`) puts the player in its loader again. So check the
+shell answers (`arb TARGET sh uptime`) before a `run IMAGE 0`; a player
+whose tty the host can't open yet (no udev rule) gets a long finite return
+instead, or it waits for someone to reset it.
+
 ## Reading results
 
 - **The log** first. Fault and panic lines, `LOST` (no return) and an early
