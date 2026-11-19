@@ -118,7 +118,8 @@ class Target(ABC):
     def check_keys(self, script: str) -> None:
         if len(script.encode()) > self.keys_max:
             raise KeyScriptError(f"key script over {self.keys_max} bytes")
-        check_script(script, self.key_letters, self.key_suffixes)
+        panel = (self.lcd.width, self.lcd.height) if self.has("touch") else None
+        check_script(script, self.key_letters, self.key_suffixes, panel)
 
     def key_duration_ms(self, script: str) -> int:
         """How long the firmware takes over SCRIPT"""

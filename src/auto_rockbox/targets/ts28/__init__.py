@@ -39,7 +39,8 @@ class Ts28(Ts17):
     this player.
 
     Keys for key scripts: B back, S play/pause (select), M the "M" key,
-    V v volume up and down (skip right and left), P power.
+    V v volume up and down (skip right and left), P power; touches as
+    @X:Y and drags as @X:Y>X2:Y2 in panel pixels (keys.py).
     """
 
     name = "ts28"
@@ -49,7 +50,7 @@ class Ts28(Ts17):
     key_letters = "BSMVvP"
     # Grows as the drivers come up (docs/ts28/checklist.md); the battery
     # reading and the charger guard are the chip's, as on the TS17
-    capabilities = frozenset({"battery", "storage", "framebuffer"})
+    capabilities = frozenset({"battery", "storage", "framebuffer", "touch"})
     dev_dir = "/ts28test"
     model_tag: ClassVar[str] = "xlx_TS28"   # NOR 0x1338 (Lark fact L-F-0018)
     usb_product: ClassVar[str | None] = "0003"     # ts28.h
