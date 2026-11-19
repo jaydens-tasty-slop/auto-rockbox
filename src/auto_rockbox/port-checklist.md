@@ -65,7 +65,7 @@ How to fill it in:
   evidence:
 - [ ] wayback.usb-only Recovery mode only with USB power in: on battery a hang or crash reboots (tested with a crash armed and USB pulled)
   evidence:
-- [ ] wayback.charger The charge enable bit is known and the host tools stop the charger in recovery mode
+- [ ] wayback.charger The charge enable bit is known and the host tools stop the charger in recovery mode (n/a when no software stops the charge, stock's included: a board charger that ends it itself)
   evidence:
 
 ## devloop: the dev loop before drivers (bring-up.md, Phase 2; adding-a-target.md)
