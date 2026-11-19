@@ -166,6 +166,14 @@ Target API, so they run on a player whose dev shell doesn't work yet. A
 player's own (`targets/NAME/soak.py`) follow its menus, and one of the same
 name replaces the generic one.
 
+`backlight` also tests the panel's wake: the backlight goes off, the panel
+sleeps, and the first level wakes it with nothing else drawing (the shell
+runs the test on the UI thread, theme off). A UI that redraws after every
+wake hides a panel that only starts on a later write: the TS28's stayed
+dark at levels 1 and 2 (no TE in its log, "brightness 1 hardly lit") until
+its first write moved to 120 ms after display-on. Its levels have to be
+white on camera; the menu at level 1 means the UI drew over the test.
+
 A touch player's list feel is a scenario, not a look at the panel: `flick`
 scrolls a 60-row folder (it makes `/flick` on the card) with key-script
 drags and judges the build's `fling` and `coast` log lines: every drag a
