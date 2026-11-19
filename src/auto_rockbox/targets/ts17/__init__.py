@@ -84,7 +84,7 @@ class Ts17(Target):
     summary = "Actions Lark (Cortex-M4F), 4 MiB SPI NOR run in place, ADFU download mode"
     lcd = Lcd(128, 160)
     key_letters = "UDLRSVvP"     # ring, centre, volume up/down, on/off
-    capabilities = frozenset({"framebuffer", "shell", "battery", "cold", "usb", "storage"})
+    capabilities = frozenset({"framebuffer", "shell", "battery", "cold", "usb", "storage", "mic"})
     model_tag: ClassVar[str] = "xlx_58209_TS17_01"  # NOR 0x1338 (nor.model_tag)
     usb_product: ClassVar[str | None] = "0002"     # ts17.h
     return_line = devblock.RETURN_LINE

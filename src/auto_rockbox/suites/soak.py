@@ -22,6 +22,7 @@ import sys
 import time
 import wave
 from argparse import Namespace
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -62,6 +63,13 @@ FMSTAT = re.compile(r"^fmstat (\d+) kHz: present (\d) tuned (\d) stereo (\d) "
 FM_FLOOR_DBFS = -35.0   # quieter Line In seconds are not the radio (~-16 dBFS RMS at 0 dB)
 FM_RECORD_S = 10        # the fm-record step's recording
 FM_RECORD_NAME = "arb-fmrec"    # its file in the dev folder (.wav)
+MIC_RECORD_S = 12       # the mic-record step's recording
+MIC_RECORD_NAME = "arb-mic"
+# A powered mic's own noise at the default gain sits above a dead input's (the
+# TS28, 2026-11-19: -50 dBFS RMS with the bias on, -74 with it off). Rockbox
+# plays nothing while it records (pcm_mixer.c), so the player can't sound a
+# tone into its own mic.
+MIC_FLOOR_DBFS = -65.0
 REC_DONE = re.compile(r"^rec: (\d+) ms recorded$", re.M)
 ROCKS = "/.rockbox/rocks"
 USB_HASH_MIB = 16       # the usb-hash step's file
@@ -508,29 +516,65 @@ def fm_record(step: StepContext) -> Outcome:
                        skipped=True)
     b = boot(step, 50, "12000", settings={**WIRED, "volume": "0", "sh": f"radio {khz}",
                                           "then": f"rec {FM_RECORD_S} {FM_RECORD_NAME}"})
-    out = b.outcome
+
+    def judge(wav: Path, recorded: float, out: Outcome) -> None:
+        c = recording_checked(wav, recorded, out)
+        if c.rms_dbfs < FM_FLOOR_DBFS:
+            out.problems.append(f"the recording is quiet (RMS {c.rms_dbfs:.1f} dBFS): "
+                                "no radio in it?")
+    return recording_judged(step, b.outcome, FM_RECORD_NAME, judge)
+
+
+@scenario("mic-record", suite="soak", area="record", weight=1, needs={"mic", "storage"})
+def mic_record(step: StepContext) -> Outcome:
+    """The mic records: the shell's rec takes 12 s from the mic (mono) to a
+    WAV in the dev folder without warnings; on the card the file holds that
+    long, without an overload wrap, its noise over a dead input's (a mic
+    without its bias, another input). Then the file is removed"""
+    t = step.target
+    if not t.dev_dir:
+        return Outcome(note="skipped: no dev_dir", skipped=True)
+    b = boot(step, 40, settings={**WIRED,
+                                 "sh": f"rec {MIC_RECORD_S} {MIC_RECORD_NAME} mic mono"})
+
+    def judge(wav: Path, recorded: float, out: Outcome) -> None:
+        c = recording_checked(wav, recorded, out)
+        if c.rms_dbfs < MIC_FLOOR_DBFS:
+            out.problems.append(f"the recording is quiet (RMS {c.rms_dbfs:.1f} dBFS): "
+                                "the mic unpowered, or another input?")
+    return recording_judged(step, b.outcome, MIC_RECORD_NAME, judge)
+
+
+def recording_checked(wav: Path, recorded: float, out: Outcome) -> fmcheck.FmCheck:
+    """WAV's levels as OUT's note; problems for a length off the RECORDED
+    seconds and for overload wraps"""
+    c = fmcheck.check(wav)
+    out.note = f"{c.seconds:.1f} s, RMS {c.rms_dbfs:.1f} dBFS, peak {c.peak_dbfs:.1f} dBFS"
+    if abs(c.seconds - recorded) > 1:
+        out.problems.append(f"the file holds {c.seconds:.1f} s of the {recorded:.1f} s recorded")
+    if c.wraps:
+        out.problems.append(f"{c.wraps} overload wraps (at {c.wrap_times} s)")
+    return c
+
+
+def recording_judged(step: StepContext, out: Outcome, name: str,
+                     judge: Callable[[Path, float, Outcome], None]) -> Outcome:
+    """After a boot whose shell recorded NAME.wav into the dev folder: the
+    recording finished without warnings, and JUDGE(the file on the card, the
+    seconds the log says were recorded, OUT) passes. The file is removed, or
+    kept beside the step's files when anything failed"""
     if out.lost:
         return out
+    t = step.target
     out.problems += [ln for ln in out.output.splitlines() if ln.startswith("rec: warnings")]
     if not (done := REC_DONE.search(out.output)):
         out.problems.append("no recording finished (sh: rec)")
         return out
-    recorded = int(done[1]) / 1000
     try:
         with (t.mass_storage(STORAGE_S, suite(step).image) as dev,
               card.mounted(dev) as mp):
-            wav = mp / t.dev_dir.strip("/") / f"{FM_RECORD_NAME}.wav"
-            c = fmcheck.check(wav)
-            out.note = (f"{c.seconds:.1f} s, RMS {c.rms_dbfs:.1f} dBFS, "
-                        f"peak {c.peak_dbfs:.1f} dBFS")
-            if abs(c.seconds - recorded) > 1:
-                out.problems.append(f"the file holds {c.seconds:.1f} s of the "
-                                    f"{recorded:.1f} s recorded")
-            if c.rms_dbfs < FM_FLOOR_DBFS:
-                out.problems.append(f"the recording is quiet (RMS {c.rms_dbfs:.1f} dBFS): "
-                                    "no radio in it?")
-            if c.wraps:
-                out.problems.append(f"{c.wraps} overload wraps (at {c.wrap_times} s)")
+            wav = mp / t.dev_dir.strip("/") / f"{name}.wav"
+            judge(wav, int(done[1]) / 1000, out)
             if out.problems:                    # kept to look at
                 shutil.move(wav, step.path(".wav"))
             else:

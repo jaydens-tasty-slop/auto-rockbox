@@ -25,6 +25,7 @@ to targets that declare it:
     cold         RunRequest.cold boots through the normal boot chain
     usb          RunRequest.usb starts the dev shell on USB serial
     storage      mass_storage() puts the player's card on this PC
+    mic          the dev shell's rec records a built-in mic
 """
 
 from __future__ import annotations

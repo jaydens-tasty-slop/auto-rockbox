@@ -79,10 +79,12 @@ def test_registered() -> None:
     assert set(table) == GENERIC - {"fsck", "poweroff", "usb-hash"}
     yp3 = SoakSuite(Yp3(ws), Path("x.elf"), shots=False)
     assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff", "flick": "needs touch",
-                                    "fm-station": "needs fm", "fm-record": "needs fm"}
+                                    "fm-station": "needs fm", "fm-record": "needs fm",
+                                    "mic-record": "needs mic"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert ({n for n, s in ts17.items() if s.targets is None}
-            == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay", "backlight", "keys"})
+            == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay", "backlight", "keys",
+                "mic-record"})
     assert all(ts17[n].targets == {"ts17"} for n in ("boot", "tone", "poweroff"))
 
 
@@ -254,41 +256,63 @@ def test_fm_record() -> None:
     """The recording's log and its WAV on the card: whole, loud enough, no
     wraps, then removed; a quiet or short file fails"""
     def check(seconds: float, level: float, log: str = "rec: 10000 ms recorded\n") -> Outcome:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            ws = Workspace(root, {"fm": {"station": 94900}})
-            (root / "devdir").mkdir()
-            wav = root / "devdir" / "arb-fmrec.wav"
-            t = np.arange(int(44100 * seconds)) / 44100
-            x = (level * np.sin(2 * np.pi * 440 * t) * 32767).astype("<i2")
-            with wave.open(str(wav), "wb") as w:
-                w.setnchannels(2)
-                w.setsampwidth(2)
-                w.setframerate(44100)
-                w.writeframes(np.repeat(x, 2).tobytes())
-
-            @contextmanager
-            def mounted(dev: Path) -> Generator[Path]:
-                yield root
-            p = LogPlayer(ws, lambda req: log + RETURN)
-            with mock.patch.object(LogPlayer, "capabilities", frozenset({"fm", "storage"})), \
-                    mock.patch.object(LogPlayer, "mass_storage", create=True) as ms, \
-                    mock.patch.object(card, "mounted", mounted):
-                ms.return_value.__enter__.return_value = Path("/dev/sdx1")
-                suite = SoakSuite(p, Path("x.elf"), shots=False)
-                ctx = engine.StepContext(1, "fm-record", p, suite, random.Random(1), root,
-                                         datetime.now())
-                out = engine.scenarios_for(suite)["fm-record"].fn(ctx)
-            assert not wav.exists()
-            assert (root / "001-fm-record.wav").exists() == bool(out.problems)
-            assert p.requests[0].settings["then"] == "rec 10 arb-fmrec"
-            return out
+        t = np.arange(int(44100 * seconds)) / 44100
+        x = np.repeat(level * np.sin(2 * np.pi * 440 * t), 2).reshape(-1, 2)
+        out, p = recorded("fm-record", {"fm", "storage"}, "arb-fmrec", x, log,
+                          ws_data={"fm": {"station": 94900}})
+        assert p.requests[0].settings["then"] == "rec 10 arb-fmrec"
+        return out
     out = check(10.0, 0.3)
     assert out.problems == [] and out.note.startswith("10.0 s, RMS -13.5 dBFS")
     assert check(10.0, 0.001).problems[0].startswith("the recording is quiet")
     assert check(6.0, 0.3).problems == ["the file holds 6.0 s of the 10.0 s recorded"]
     assert check(10.0, 0.3, "rec: warnings 1 at 500 ms\nrec: 10000 ms recorded\n").problems == [
         "rec: warnings 1 at 500 ms"]
+
+
+def test_mic_record() -> None:
+    """mic-record: 12 s from the mic, mono; a powered mic's noise passes, a
+    dead input's is too quiet"""
+    def check(rms_dbfs: float) -> Outcome:
+        x = np.random.default_rng(1).normal(0, 10 ** (rms_dbfs / 20), (44100 * 12, 1))
+        out, p = recorded("mic-record", {"mic", "storage"}, "arb-mic", x,
+                          "rec: 12000 ms recorded\n")
+        assert p.requests[0].settings["sh"] == "rec 12 arb-mic mic mono"
+        return out
+    assert check(-50).problems == []
+    assert check(-74).problems[0].startswith("the recording is quiet (RMS -7")
+
+
+def recorded(name: str, caps: set[str], wav_name: str, x: np.ndarray, log: str, *,
+             ws_data: dict[str, dict[str, object]] | None = None) -> tuple[Outcome, LogPlayer]:
+    """Scenario NAME on a player with CAPS whose card holds WAV_NAME.wav of
+    frames X (full scale 1) in its dev folder; its log LOG. The file is gone
+    after, kept beside the step's files only when the step failed"""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        ws = Workspace(root, ws_data or {})
+        (root / "devdir").mkdir()
+        wav = root / "devdir" / f"{wav_name}.wav"
+        with wave.open(str(wav), "wb") as w:
+            w.setnchannels(x.shape[1])
+            w.setsampwidth(2)
+            w.setframerate(44100)
+            w.writeframes((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
+
+        @contextmanager
+        def mounted(dev: Path) -> Generator[Path]:
+            yield root
+        p = LogPlayer(ws, lambda req: log + RETURN)
+        with mock.patch.object(LogPlayer, "capabilities", frozenset(caps)), \
+                mock.patch.object(LogPlayer, "mass_storage", create=True) as ms, \
+                mock.patch.object(card, "mounted", mounted):
+            ms.return_value.__enter__.return_value = Path("/dev/sdx1")
+            suite = SoakSuite(p, Path("x.elf"), shots=False)
+            ctx = engine.StepContext(1, name, p, suite, random.Random(1), root, datetime.now())
+            out = engine.scenarios_for(suite)[name].fn(ctx)
+        assert not wav.exists()
+        assert (root / f"001-{name}.wav").exists() == bool(out.problems)
+        return out, p
 
 
 def test_tone_needs_the_capture() -> None:
