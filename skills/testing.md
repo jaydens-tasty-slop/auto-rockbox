@@ -182,6 +182,12 @@ more. Keep a touch test's points off the list's edges and off a mini player
 (the bottom fifth while music plays): a drag that starts there isn't the
 list's, and a tap there is the theme's.
 
+A panel's refresh is a UX setting to measure, not to max out. A frame
+that no longer fits a refresh waits for the next, so a faster panel can
+halve the frame rate: the TS28 at 60 Hz coasted at 30 fps (its list
+frames take 17-22 ms), at 49 Hz at 49. After a refresh change, run `flick`
+quiet and with music, and read the `transition` lines' "late" counts.
+
 The games a build must ship are the Target's `games`: each plugin with a
 key script that starts a game from its menu, plays it and quits with the
 player's keys. `games` runs one per step, in turn (`--only games` covers
