@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import random
 import tempfile
+import wave
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import datetime
@@ -77,8 +78,8 @@ def test_registered() -> None:
         table = engine.scenarios_for(SoakSuite(LogPlayer(ws, str), Path("x.elf"), shots=False))
     assert set(table) == GENERIC - {"fsck", "poweroff", "usb-hash"}
     yp3 = SoakSuite(Yp3(ws), Path("x.elf"), shots=False)
-    assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff",
-                                    "flick": "needs touch", "fm-station": "needs fm"}
+    assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff", "flick": "needs touch",
+                                    "fm-station": "needs fm", "fm-record": "needs fm"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert ({n for n, s in ts17.items() if s.targets is None}
             == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay", "backlight", "keys"})
@@ -247,6 +248,47 @@ def test_keys() -> None:
     assert run("keys", keylog([1, 2, 4, 8, 16, 1], hold=30))[0].problems == [
         "U held 30 ticks, not a second"]
     assert soak.key_presses("buttons 4 (adc 812)\nbuttons 0 (adc 4000)\n") == [(4, None)]
+
+
+def test_fm_record() -> None:
+    """The recording's log and its WAV on the card: whole, loud enough, no
+    wraps, then removed; a quiet or short file fails"""
+    def check(seconds: float, level: float, log: str = "rec: 10000 ms recorded\n") -> Outcome:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ws = Workspace(root, {"fm": {"station": 94900}})
+            (root / "devdir").mkdir()
+            wav = root / "devdir" / "arb-fmrec.wav"
+            t = np.arange(int(44100 * seconds)) / 44100
+            x = (level * np.sin(2 * np.pi * 440 * t) * 32767).astype("<i2")
+            with wave.open(str(wav), "wb") as w:
+                w.setnchannels(2)
+                w.setsampwidth(2)
+                w.setframerate(44100)
+                w.writeframes(np.repeat(x, 2).tobytes())
+
+            @contextmanager
+            def mounted(dev: Path) -> Generator[Path]:
+                yield root
+            p = LogPlayer(ws, lambda req: log + RETURN)
+            with mock.patch.object(LogPlayer, "capabilities", frozenset({"fm", "storage"})), \
+                    mock.patch.object(LogPlayer, "mass_storage", create=True) as ms, \
+                    mock.patch.object(card, "mounted", mounted):
+                ms.return_value.__enter__.return_value = Path("/dev/sdx1")
+                suite = SoakSuite(p, Path("x.elf"), shots=False)
+                ctx = engine.StepContext(1, "fm-record", p, suite, random.Random(1), root,
+                                         datetime.now())
+                out = engine.scenarios_for(suite)["fm-record"].fn(ctx)
+            assert not wav.exists()
+            assert (root / "001-fm-record.wav").exists() == bool(out.problems)
+            assert p.requests[0].settings["then"] == "rec 10 arb-fmrec"
+            return out
+    out = check(10.0, 0.3)
+    assert out.problems == [] and out.note.startswith("10.0 s, RMS -13.5 dBFS")
+    assert check(10.0, 0.001).problems[0].startswith("the recording is quiet")
+    assert check(6.0, 0.3).problems == ["the file holds 6.0 s of the 10.0 s recorded"]
+    assert check(10.0, 0.3, "rec: warnings 1 at 500 ms\nrec: 10000 ms recorded\n").problems == [
+        "rec: warnings 1 at 500 ms"]
 
 
 def test_tone_needs_the_capture() -> None:

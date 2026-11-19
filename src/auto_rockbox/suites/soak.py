@@ -17,8 +17,10 @@ from __future__ import annotations
 import hashlib
 import itertools
 import re
+import shutil
 import sys
 import time
+import wave
 from argparse import Namespace
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -58,6 +60,9 @@ CAUGHT = re.compile(r"^coast -?\d+ px/s: caught at", re.M)
 FMSTAT = re.compile(r"^fmstat (\d+) kHz: present (\d) tuned (\d) stereo (\d) "
                     r"rssi (\d+( \(backlight off\))?); rds pi ([0-9a-f]{4}) '(.*)'$", re.M)
 FM_FLOOR_DBFS = -35.0   # quieter Line In seconds are not the radio (~-16 dBFS RMS at 0 dB)
+FM_RECORD_S = 10        # the fm-record step's recording
+FM_RECORD_NAME = "arb-fmrec"    # its file in the dev folder (.wav)
+REC_DONE = re.compile(r"^rec: (\d+) ms recorded$", re.M)
 ROCKS = "/.rockbox/rocks"
 USB_HASH_MIB = 16       # the usb-hash step's file
 UDELAY = re.compile(r"^udelay (\d+) us x \d+ at (\d+) MHz: -?\d+ ticks, (\d+\.\d+) us a call$",
@@ -487,6 +492,51 @@ def games(step: StepContext) -> Outcome:
         out.problems.append("did not quit with the player's keys (a keymap bug?)")
     elif rc.group(1) != "0":
         out.problems.append(f"returned {rc.group(1)}, not PLUGIN_OK")
+    return out
+
+
+@scenario("fm-record", suite="soak", area="record", weight=1, needs={"fm", "storage"})
+def fm_record(step: StepContext) -> Outcome:
+    """The radio recorded: on the workspace's reference station the shell's
+    rec takes 10 s of FM to a WAV in the dev folder without warnings; on the
+    card the file holds that long, at the radio's level, without an ADC
+    overload wrap (fmcheck); then it is removed"""
+    t = step.target
+    khz = t.ws.section("fm").integer("station", 0)
+    if not khz or not t.dev_dir:
+        return Outcome(note="skipped: no [fm] station in the workspace, or no dev_dir",
+                       skipped=True)
+    b = boot(step, 50, "12000", settings={**WIRED, "volume": "0", "sh": f"radio {khz}",
+                                          "then": f"rec {FM_RECORD_S} {FM_RECORD_NAME}"})
+    out = b.outcome
+    if out.lost:
+        return out
+    out.problems += [ln for ln in out.output.splitlines() if ln.startswith("rec: warnings")]
+    if not (done := REC_DONE.search(out.output)):
+        out.problems.append("no recording finished (sh: rec)")
+        return out
+    recorded = int(done[1]) / 1000
+    try:
+        with (t.mass_storage(STORAGE_S, suite(step).image) as dev,
+              card.mounted(dev) as mp):
+            wav = mp / t.dev_dir.strip("/") / f"{FM_RECORD_NAME}.wav"
+            c = fmcheck.check(wav)
+            out.note = (f"{c.seconds:.1f} s, RMS {c.rms_dbfs:.1f} dBFS, "
+                        f"peak {c.peak_dbfs:.1f} dBFS")
+            if abs(c.seconds - recorded) > 1:
+                out.problems.append(f"the file holds {c.seconds:.1f} s of the "
+                                    f"{recorded:.1f} s recorded")
+            if c.rms_dbfs < FM_FLOOR_DBFS:
+                out.problems.append(f"the recording is quiet (RMS {c.rms_dbfs:.1f} dBFS): "
+                                    "no radio in it?")
+            if c.wraps:
+                out.problems.append(f"{c.wraps} overload wraps (at {c.wrap_times} s)")
+            if out.problems:                    # kept to look at
+                shutil.move(wav, step.path(".wav"))
+            else:
+                wav.unlink()
+    except (ArbError, OSError, ValueError, EOFError, wave.Error) as e:
+        out.problems.append(f"the recording on the card: {e}")
     return out
 
 
