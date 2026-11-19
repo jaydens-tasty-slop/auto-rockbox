@@ -147,11 +147,10 @@ def fsck(step: StepContext) -> Outcome:
     (whatever the steps before wrote)"""
     try:
         with step.target.mass_storage(STORAGE_S, suite(step).image) as dev:
-            clean = card.check(dev)
+            c = card.check(dev)
     except ArbError as e:
         return Outcome([f"no card check: {e}"])
-    return Outcome([] if clean else [card.describe_check(clean)],
-                   card.describe_check(clean))
+    return Outcome([] if c.clean else [c.describe()], c.describe())
 
 
 @scenario("tone", suite="soak", area="audio", weight=2)

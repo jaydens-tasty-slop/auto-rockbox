@@ -34,10 +34,10 @@ def card_push(ctx: Context, args: Namespace) -> int:
             with card.mounted(dev) as mp:
                 print(f"card at {mp}; unzipping {len(z.namelist())} files", flush=True)
                 z.extractall(mp)
-            clean = card.check(dev) if args.check else True
-    if args.check:
-        print(card.describe_check(clean))
-    return 0 if clean else 1
+            c = card.check(dev) if args.check else None
+    if c:
+        print(c.describe())
+    return 0 if c is None or c.clean else 1
 
 
 @command("card-run", help="run a shell command with the card mounted at $MP",
@@ -51,18 +51,21 @@ def card_run(ctx: Context, args: Namespace) -> int:
             print(f"card at {mp}", flush=True)
             rc = subprocess.run(["bash", "-c", args.cmd], env={**os.environ, "MP": str(mp)},
                                 check=False).returncode
-        clean = card.check(dev) if args.check else True
-    if args.check:
-        print(card.describe_check(clean))
+        c = card.check(dev) if args.check else None
+    if c:
+        print(c.describe())
     if rc:
         print(f"command exited {rc}", file=sys.stderr)
-    return rc or (0 if clean else 1)
+    return rc or (0 if c is None or c.clean else 1)
 
 
-@command("card-check", help="fsck the card (udisks' filesystem check)", needs={"storage"},
-         args=[SECONDS, IMAGE])
+@command("card-check", help="fsck the card (fsck.fat's report, or udisks' yes or no)",
+         needs={"storage"},
+         args=[SECONDS, IMAGE,
+               arg("--repair", action="store_true",
+                   help="fsck.fat -a first: fixes what it can (needs the uaccess udev rule)")])
 def card_check(ctx: Context, args: Namespace) -> int:
     with ctx.t.mass_storage(args.seconds, args.image) as dev:
-        clean = card.check(dev)
-    print(card.describe_check(clean))
-    return 0 if clean else 1
+        c = card.check(dev, args.repair)
+    print(c.describe())
+    return 0 if c.clean else 1

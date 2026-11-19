@@ -65,7 +65,13 @@ send a key first.
   up events. Keep the PC's Line In at unity gain.
 - **The card**: `arb TARGET card-run 'ls -R "$MP"'`, `card-push rockbox.zip`
   and `card-check` boot the build as USB mass storage, mount the card and
-  run the command, then the player returns.
+  run the command, then the player returns. The check is `fsck.fat` with
+  its report, and `card-check --repair` fixes what it finds, once a udev
+  rule tags the players' disks `uaccess` (vendor 1209, test product IDs;
+  card.py). Without that rule there's only udisks' yes or no, so install it
+  on a new bench before the first card write. Stock firmware leaves
+  its own errors (duplicate entries, say): repair a card once before
+  counting errors as Rockbox's.
 
 ## Habits
 

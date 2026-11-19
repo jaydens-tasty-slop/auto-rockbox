@@ -1,6 +1,12 @@
 """The player's card on this PC, over Rockbox's USB mass storage, by udisks:
 find it, mount it, check it. No root needed.
 
+The check is `fsck.fat` itself (its report; it can also repair) when this
+user may open the card's device: a udev rule tags the players' disks
+`uaccess` (Rockbox's vendor ID with a pid.codes test product ID; the port's
+tools/udev/70-rockbox-cards.rules). Without that rule it is udisks' check:
+clean or not, no details, no repair.
+
 The card is found by its filesystem UUID (`[targets.NAME] card_uuid`) or, if
 none is set, as the first partition on a USB disk with the player's USB IDs
 (Rockbox's vendor ID and the target's product ID: another player on the same
@@ -9,11 +15,13 @@ test vendor ID is never taken for it).
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import ArbError
@@ -101,10 +109,34 @@ def unmount(dev: Path, tries: int = 10) -> None:
         time.sleep(5)
 
 
-def check(dev: Path) -> bool:
-    """udisks' filesystem check (a read-only fsck) of the unmounted card: True
-    if clean. udisks gives no details; `fsck.fat -n` on the device (as root)
-    does."""
+@dataclass(frozen=True)
+class Check:
+    clean: bool
+    report: str = ""        # fsck.fat's output; empty from udisks
+    repaired: str = ""      # what a repair pass said it fixed
+
+    def describe(self) -> str:
+        if self.clean and not self.repaired:
+            return "fsck: clean"
+        if self.clean:
+            return f"fsck: clean after the repair:\n{self.repaired}"
+        if not self.report:
+            return ("fsck: ERRORS (udisks' check; details and repair need the "
+                    "uaccess udev rule for the card's disk, see card.py)")
+        return f"fsck: ERRORS\n{self.report}"
+
+
+def _fsck_fat(dev: Path, mode: str) -> tuple[bool, str]:
+    """fsck.fat -n (read-only) or -a (repair): clean, and its report"""
+    r = subprocess.run(["fsck.fat", mode, str(dev)], capture_output=True, text=True,
+                       check=False)
+    out = (r.stdout + r.stderr).strip()
+    if r.returncode not in (0, 1):
+        raise CardError(f"fsck.fat {mode} {dev}: {out}")
+    return r.returncode == 0, out
+
+
+def _udisks_check(dev: Path) -> bool:
     obj = "/org/freedesktop/UDisks2/block_devices/" + dev.name
     r = subprocess.run(["gdbus", "call", "--timeout", "900", "--system", "--dest",
                         "org.freedesktop.UDisks2", "--object-path", obj, "--method",
@@ -116,8 +148,20 @@ def check(dev: Path) -> bool:
     return reply == "(true,)"
 
 
-def describe_check(clean: bool) -> str:
-    return "fsck: clean" if clean else "fsck: ERRORS (udisks' check failed)"
+def check(dev: Path, repair: bool = False) -> Check:
+    """The unmounted card's filesystem check. REPAIR: fsck.fat -a first (it
+    fixes what it can without asking), then the read-only check decides."""
+    if not os.access(dev, os.R_OK | os.W_OK):
+        if repair:
+            raise CardError(f"repairing {dev} needs write access to it: the uaccess "
+                            "udev rule for the card's disk (see card.py)")
+        return Check(_udisks_check(dev))
+    repaired = ""
+    if repair:
+        clean, out = _fsck_fat(dev, "-a")
+        repaired = "" if clean else out
+    clean, out = _fsck_fat(dev, "-n")
+    return Check(clean, "" if clean else out, repaired)
 
 
 @contextmanager

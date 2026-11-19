@@ -322,10 +322,10 @@ class TortureSuite(Suite):
         self.unlock()
         try:
             with self.target.mass_storage(CARD_CHECK_S, self.image) as dev:
-                clean = card.check(dev)
+                c = card.check(dev)
         except ArbError as e:
             return f"card check: none ({e})"
-        return f"card check after the run: {card.describe_check(clean)}"
+        return f"card check after the run: {c.describe()}"
 
     def run_step(self, ctx: StepContext, body: Callable[[], str | None]) -> Outcome:
         """One scenario: BODY's note, the problems it recorded, its commands
