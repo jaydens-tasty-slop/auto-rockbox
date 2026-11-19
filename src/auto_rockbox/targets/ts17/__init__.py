@@ -13,6 +13,7 @@ SRAM block (devblock.py). With usb=1 the dev shell answers on USB serial
 
 from __future__ import annotations
 
+import re
 import struct
 import sys
 import time
@@ -40,6 +41,10 @@ FB_KEEP = 0x100                 # the gadget's status block and a few results: w
                                 # charger guard overwrites at the framebuffer's start
 SETTLE_S = 0.5                  # download mode answers a moment after it enumerates
 SHELL_VID = "1209"              # the dev build's USB vendor (pid.codes test IDs)
+
+
+# dev-lark.c's last lines before a return: the framebuffer's CRC as memory held it
+FB_CRC = re.compile(r"^fb crc ([0-9a-f]{8}) at [0-9a-f]{8}, \d+ bytes$", re.MULTILINE)
 
 
 def _note(msg: str) -> None:
@@ -177,12 +182,22 @@ class Ts17(Target):
                        f"pc {last.pc:08x} {pc}, lr {last.lr:08x} {lr}\n")
 
     def read_framebuffer(self, elf: Path | None) -> Image:
-        """Plain ROM reads; a gadget run (the charger guard, `nor`) overwrites
-        the buffer's start, which after_run puts back"""
-        addr = Elf(elf or self.image()).address(FB_SYMBOL)
-        with adfu.Adfu() as link:
-            raw = link.read(addr, 2 * self.lcd.width * self.lcd.height)
+        """Checked against the CRC the image logged at its return: a read
+        that differs is noted (the picture may still serve)"""
+        elf = elf or self.image()
+        raw = self._framebuffer_bytes(Elf(elf).address(FB_SYMBOL),
+                                      2 * self.lcd.width * self.lcd.height)
+        logged = FB_CRC.findall(self.read_log(elf))
+        if logged and int(logged[-1], 16) != fb.crc32_mpeg2(raw):
+            _note(f"{self.name}: the framebuffer read differs from the image's at its "
+                  "return (its logged CRC)")
         return fb.decode(raw, self.lcd)
+
+    def _framebuffer_bytes(self, addr: int, size: int) -> bytes:
+        """Plain ROM reads of SRAM; a gadget run (the charger guard, `nor`)
+        overwrites the buffer's start, which after_run puts back"""
+        with adfu.Adfu() as link:
+            return link.read(addr, size)
 
     def after_run(self, req: RunRequest, returned: bool) -> None:
         if returned:
