@@ -335,6 +335,10 @@ def test_boot_judges_soak7_logs() -> None:
         "early return (hang, reset or power-off)"]
     assert judged(lambda r: normal_log(r, "lcd: frame timed out")).problems == [
         "lcd: frame timed out"]
+    refused = "pad GPIO26 REFUSED: owner 5, asked by 1"
+    assert judged(lambda r: normal_log(r, refused)).problems == [refused]
+    probe = "pad GPIO35 taken by a dev probe: owner 1, asked by 7"
+    assert judged(lambda r: normal_log(r, probe)).problems == []
     assert judged(lambda r: normal_log(r).replace("dac: powered up", "dac: off"),
                   expect=("dac: powered up",)).problems == ["missing: dac: powered up"]
 
