@@ -444,6 +444,15 @@ Then the torture suite until it runs clean for days, the battery runs
   raw samples or frames before blaming the firmware. Capture stamps can
   collide (two seconds published in one wall second), a test file can be
   music rather than tone, and the capture can run seconds behind the player.
+- **A fault once in a few boots is a count, not an anecdote.** Log the
+  init's result on every boot (a chip ID, a return code: upstream drivers
+  often ignore their bus errors), run `arb TARGET test --only boot --repeat
+  16` (40 s a boot) on the base and on each candidate, and compare counts.
+  The TS28's tuner went undetected in 5 of 32 boots: its first I2C read came
+  right after the touch part's reset, on the same bus, and the part's
+  start-up broke it. A plausible fix (the controller started before its
+  pins) still failed 2 of 16; waiting out the start-up, 0 of 32. Parts that
+  share a bus get a quiet time after a reset (the Lark's `lark_i2c_quiet`).
 - **A power-off needs a proven wake path** before you test it unattended:
   prove the wake while the player is on.
 - **Docs are facts, not diaries.** Keep the player's notes, driver status
