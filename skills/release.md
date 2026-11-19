@@ -189,7 +189,9 @@ Each Rockbox run must show all of these:
   - [ ] No dead code, no diagnostic scaffolding and no `TODO(cleanup)` on
         a path the release build compiles.
   - [ ] Shared Rockbox code changes only behind the target's own define.
-        The simulator and at least one other target still build unchanged.
+        The simulator and at least one other target still build unchanged
+        (`arb tree compare` of the tag against its base: bring-up.md,
+        Ground rules).
 
 ### Build and legal
 

@@ -42,6 +42,18 @@ and a fix on one player reads as done for the other.
   dump all of it twice, compare the two dumps, and restore a non-critical
   sector from the dump to prove the path works. Keep the dumps out of any
   public repository.
+- **Leave other targets alone.** Every change to shared Rockbox code sits
+  behind the port's own define or a feature define it turns on, and other
+  targets build exactly as before (setup.tree). Prove it with outputs, not
+  by reading diffs: `arb tree build` a few other targets (the closest
+  sibling port, an upstream colour target, an upstream touchscreen one)
+  from the branch's base and from the branch, then `arb tree compare`
+  each pair. It sets aside what has to differ (debug info's line numbers,
+  the module build ID, `__DATE__`) and lists what really differs; a
+  refactor that only reshuffles code shows up there too, so keep the old
+  form where the feature is off. The TS28's first pass found three objects
+  its UI work had changed for every target without that UI (and two
+  upstream build breaks inherited from its base).
 - **Never touch the way back.** The boot ROM's recovery mode, and the
   bootloader stages that lead to it, are the only things that can't be fixed
   with a USB cable. Find out which flash areas they live in, and make your
