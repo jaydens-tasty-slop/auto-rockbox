@@ -160,11 +160,19 @@ def sdtest(step: StepContext) -> Outcome:
   itself passed.
 
 Every player's soak scenarios (`suites/soak.py`: boot, crash, poweroff,
-sdtest, fsck, tone) use only the run settings every dev build takes
+sdtest, fsck, tone, flick) use only the run settings every dev build takes
 (`dev_boot`: `sdtest=`, `crash=`, `poweroff=`, `play=`, `sh=`, ...) and the
 Target API, so they run on a player whose dev shell doesn't work yet. A
 player's own (`targets/NAME/soak.py`) follow its menus, and one of the same
 name replaces the generic one.
+
+A touch player's list feel is a scenario, not a look at the panel: `flick`
+scrolls a 60-row folder (it makes `/flick` on the card) with key-script
+drags and judges the build's `fling` and `coast` log lines: every drag a
+fling, taps on a coasting list caught, nothing opened, coasts at 30 fps or
+more. Keep a touch test's points off the list's edges and off a mini player
+(the bottom fifth while music plays): a drag that starts there isn't the
+list's, and a tap there is the theme's.
 
 ### Torture suites
 

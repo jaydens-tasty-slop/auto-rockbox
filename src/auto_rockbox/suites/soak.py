@@ -43,6 +43,12 @@ CRASH_PANIC = "dev crash test 42"
 POWEROFF = ("poweroff test: posting SYS_POWEROFF", "power_off() (dry run): back to the host")
 SDTEST = re.compile(r"sdtest \d+ KiB.* errors (-?\d+)")
 STORAGE_S = 120         # the card's time on this PC for its check
+FLICK_ROWS = 60         # the flick step's list: empty folders in /flick
+FLICK_FPS = 30          # a coast's floor (a refresh is 45 to 60 a second)
+FLING = re.compile(r"^fling (-?\d+) px/s( \(boosted\))?", re.M)
+COAST = re.compile(r"^coast (-?\d+) px/s: (-?\d+) px in (\d+) ms, (\d+) frames(, at the end)?",
+                   re.M)
+CAUGHT = re.compile(r"^coast -?\d+ px/s: caught at", re.M)
 
 
 class SoakSuite(Suite):
@@ -172,6 +178,60 @@ def tone(step: StepContext) -> Outcome:
     out.problems += c.problems
     out.note = c.note
     out.output = f"{b.log}\n{c.report()}\n"
+    return out
+
+
+def _flick_folder(step: StepContext) -> str | None:
+    """/flick with its rows on the card, made where missing: a problem, or None"""
+    try:
+        with (step.target.mass_storage(STORAGE_S, suite(step).image) as dev,
+              card.mounted(dev) as mp):
+            for i in range(1, FLICK_ROWS + 1):
+                (mp / "flick" / f"Row {i:02d}").mkdir(parents=True, exist_ok=True)
+    except (ArbError, OSError) as e:
+        return f"no /flick on the card: {e}"
+    return None
+
+
+@scenario("flick", suite="soak", area="ui", weight=1, needs={"touch", "storage"})
+def flick(step: StepContext) -> Outcome:
+    """Lists under the finger (HAVE_TOUCH_FLING's log): in a list of 60
+    rows, half the time with music playing, a flick down and one up each
+    coast and end; a short flick scrolls instead of opening a row; taps on
+    coasting lists catch them and open nothing; a flick right after a catch
+    is boosted; coasts keep FLICK_FPS. Touches stay off the screen's edges
+    and its bottom fifth (a mini player)"""
+    if problem := _flick_folder(step):
+        return Outcome([problem])
+    t = step.target
+    x, h = t.lcd.width // 2, t.lcd.height
+    low, high, mid = h * 3 // 4, h * 22 // 100, h // 2
+    up, down = f"@{x}:{low}>{x}:{high}~", f"@{x}:{high + 20}>{x}:{low + 10}~"
+    keys = (f"12000 {up} 3000 {down} 3000 @{x}:{low}>{x}:{low - h * 3 // 32}~ 2000 "
+            f"{up} @{x}:{mid} 2000 {up} {up} 4000")
+    music = step.rng.random() < 0.5 and bool(t.dev_dir)
+    settings = {"sh": "browse /flick/Row 01"}
+    if music:
+        settings |= {**WIRED, "volume": TONE_DB, "play": f"{t.dev_dir}/tone.mp3"}
+    out = boot(step, 40, keys, settings=settings).outcome
+    out.note = "with music" if music else "quiet"
+    if out.lost:
+        return out
+    flings, coasts = FLING.findall(out.output), COAST.findall(out.output)
+    if len(flings) != 6:
+        out.problems.append(f"{len(flings)} flings of 6 (a flick taken for a tap?)")
+    if not any(b for _, b in flings):
+        out.problems.append("no boosted fling")
+    if (caught := len(CAUGHT.findall(out.output))) != 2:
+        out.problems.append(f"{caught} of 2 touches caught a coast (a tap, the last flick)")
+    if "transition push" in out.output:
+        out.problems.append("a row opened")
+    rates = [(v, int(frames) * 1000 // int(ms)) for v, _, ms, frames, end in coasts
+             if int(ms) >= 500 and not end]
+    out.note += "; coasts at " + ", ".join(f"{fps}" for _, fps in rates) + " fps"
+    out.problems += [f"coast {v} px/s at {fps} fps" for v, fps in rates if fps < FLICK_FPS]
+    if len(coasts) < 3:
+        out.problems.append(f"{len(coasts)} coasts ended of 3 or more")
     return out
 
 
