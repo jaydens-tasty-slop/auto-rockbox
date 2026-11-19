@@ -14,8 +14,10 @@ layout and card; one of the same name replaces the generic one.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import sys
+import time
 from argparse import Namespace
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -53,6 +55,8 @@ FMSTAT = re.compile(r"^fmstat (\d+) kHz: present (\d) tuned (\d) stereo (\d) "
                     r"rssi (\d+( \(backlight off\))?); rds pi ([0-9a-f]{4}) '(.*)'$", re.M)
 FM_FLOOR_DBFS = -35.0   # quieter Line In seconds are not the radio (~-16 dBFS RMS at 0 dB)
 ROCKS = "/.rockbox/rocks"
+USB_HASH_MIB = 16       # the usb-hash step's file
+USB_HASH_FILE = "arb-usbhash.bin"
 GAME_S = 45             # a game step's run time: the boot, the script and a margin
 
 
@@ -166,6 +170,34 @@ def fsck(step: StepContext) -> Outcome:
     except ArbError as e:
         return Outcome([f"no card check: {e}"])
     return Outcome([] if c.clean else [c.describe()], c.describe())
+
+
+@scenario("usb-hash", suite="soak", area="usb", weight=1, needs={"storage"})
+def usb_hash(step: StepContext) -> Outcome:
+    """USB mass storage moves data intact: a random file written to the
+    card in one session reads back with its SHA-256 in the next, the player
+    booted again in between (no cache on either side serves the read)"""
+    data = step.rng.randbytes(USB_HASH_MIB << 20)
+    want = hashlib.sha256(data).hexdigest()
+    t, image = step.target, suite(step).image
+    try:
+        with t.mass_storage(STORAGE_S, image) as dev:
+            t0 = time.monotonic()
+            with card.mounted(dev) as mp:
+                (mp / USB_HASH_FILE).write_bytes(data)
+            write_s = time.monotonic() - t0
+        with t.mass_storage(STORAGE_S, image) as dev:
+            t0 = time.monotonic()
+            with card.mounted(dev) as mp:
+                got = hashlib.sha256((mp / USB_HASH_FILE).read_bytes()).hexdigest()
+                read_s = time.monotonic() - t0
+                (mp / USB_HASH_FILE).unlink()
+    except (ArbError, OSError) as e:
+        return Outcome([f"mass storage: {e}"])
+    note = (f"{USB_HASH_MIB} MiB written in {write_s:.1f} s, read in {read_s:.1f} s "
+            "(with the mount)")
+    return Outcome([] if got == want else [f"read back sha256 {got[:16]}, wrote {want[:16]}"],
+                   note=note, output=f"{note}\nwrote {want}\nread  {got}\n")
 
 
 @scenario("tone", suite="soak", area="audio", weight=2)

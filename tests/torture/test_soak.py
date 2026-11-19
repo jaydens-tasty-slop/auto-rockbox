@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import random
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from unittest import mock
@@ -22,7 +23,7 @@ from auto_rockbox.targets.yp3 import Yp3
 from auto_rockbox.workspace import Workspace
 
 RETURN = "dev return: on time"
-GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone", "games"}
+GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone", "games", "usb-hash"}
 
 
 class LogPlayer(Target):
@@ -71,13 +72,13 @@ def test_registered() -> None:
     assert set(table) == GENERIC
     with mock.patch.object(LogPlayer, "capabilities", frozenset()):
         table = engine.scenarios_for(SoakSuite(LogPlayer(ws, str), Path("x.elf"), shots=False))
-    assert set(table) == GENERIC - {"fsck", "poweroff"}
+    assert set(table) == GENERIC - {"fsck", "poweroff", "usb-hash"}
     yp3 = SoakSuite(Yp3(ws), Path("x.elf"), shots=False)
     assert engine.left_out(yp3) == {"poweroff": "needs usb-poweroff",
                                     "flick": "needs touch", "fm-station": "needs fm"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert ({n for n, s in ts17.items() if s.targets is None}
-            == {"crash", "sdtest", "fsck", "games"})
+            == {"crash", "sdtest", "fsck", "games", "usb-hash"})
     assert all(ts17[n].targets == {"ts17"} for n in ("boot", "tone", "poweroff"))
 
 
@@ -129,6 +130,35 @@ def test_fsck() -> None:
             return run("fsck", str)[0]
     assert check(True).problems == []
     assert check(False).problems == [card.Check(False).describe()]
+
+
+def test_usb_hash() -> None:
+    """The file written in one session reads back in the next and is gone
+    after; a changed byte fails"""
+    with tempfile.TemporaryDirectory() as card_dir:
+        mp = Path(card_dir)
+        reads: list[bytes] = []
+
+        @contextmanager
+        def mounted(dev: Path) -> Generator[Path]:
+            yield mp
+
+        def check(flip: bool) -> Outcome:
+            real = Path.read_bytes
+
+            def read(path: Path) -> bytes:
+                b = real(path)
+                reads.append(b)
+                return bytes([b[0] ^ 1]) + b[1:] if flip else b
+            with mock.patch.object(LogPlayer, "mass_storage", create=True) as ms, \
+                    mock.patch.object(card, "mounted", mounted), \
+                    mock.patch.object(Path, "read_bytes", read):
+                ms.return_value.__enter__.return_value = Path("/dev/sdx1")
+                return run("usb-hash", str)[0]
+        out = check(False)
+        assert out.problems == [] and out.note.startswith("16 MiB written")
+        assert len(reads[0]) == 16 << 20 and not list(mp.iterdir())
+        assert check(True).problems[0].startswith("read back sha256")
 
 
 def test_tone_needs_the_capture() -> None:
