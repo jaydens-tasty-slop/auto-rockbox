@@ -15,6 +15,7 @@ layout and card; one of the same name replaces the generic one.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import re
 import sys
 import time
@@ -23,6 +24,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+
+import numpy as np
+from PIL import Image
 
 from .. import camera, card, engine, fmcheck, linein
 from ..engine import Outcome, StepContext, Suite, scenario
@@ -59,6 +63,11 @@ USB_HASH_MIB = 16       # the usb-hash step's file
 UDELAY = re.compile(r"^udelay (\d+) us x \d+ at (\d+) MHz: -?\d+ ticks, (\d+\.\d+) us a call$",
                     re.M)
 UDELAY_LENGTHS = 7      # the shell's udelay: 1 us to 1 s by tens
+BACKLIGHT = re.compile(r"^backlight (\d+) at tick (\d+)$", re.M)
+BACKLIGHT_HOLD_S = 10   # the shell's backlight: seconds a step
+BACKLIGHT_LIT = 40      # grey levels from off to full that make a camera pixel the panel's
+BACKLIGHT_PANEL = 1000  # fewer such pixels (frames shrunk 4 times): the panel never lit
+HZ = 100                # Rockbox's tick
 USB_HASH_FILE = "arb-usbhash.bin"
 GAME_S = 45             # a game step's run time: the boot, the script and a margin
 
@@ -93,20 +102,22 @@ class Boot:
     t0: datetime
     t1: datetime
     log: str = ""
+    shots: Path | None = None       # its webcam frames (t000.png, t005.png, ...) and fb.png
 
 
 def boot(step: StepContext, seconds: int, keys: str = "", *, settings: dict[str, str] | None = None,
          expect: tuple[str, ...] = (), allow: tuple[str, ...] = (), ends_early: bool = False,
-         cold: bool = False) -> Boot:
+         cold: bool = False, shots: bool = False) -> Boot:
     """Run the image for SECONDS with KEYS and judge its log: lost, an early
     return (no `return_line`) unless the step ENDS_EARLY on purpose, failure
-    lines but those that contain one of ALLOW, lines EXPECT names missing"""
+    lines but those that contain one of ALLOW, lines EXPECT names missing.
+    Webcam frames with --shots, or when the step needs them (SHOTS)"""
     s = suite(step)
     t = step.target
     req = RunRequest(s.image, seconds, keys, {**s.settings, **(settings or {})}, cold)
-    shots = step.out / "shots" / f"{step.index:03d}" if s.shots else None
+    shots_dir = step.out / "shots" / f"{step.index:03d}" if s.shots or shots else None
     t0 = datetime.now(UTC)
-    r = run(t, req, shots)
+    r = run(t, req, shots_dir)
     t1 = datetime.now(UTC)
     probs: list[str] = []
     if r.returned and t.return_line and t.return_line not in r.log and not ends_early:
@@ -116,7 +127,7 @@ def boot(step: StepContext, seconds: int, keys: str = "", *, settings: dict[str,
               and not any(a in ln for a in allow)]
     probs += [f"missing: {e}" for e in expect if e not in r.log]
     out = Outcome(probs, output=r.log, lost=not r.returned, sheet=r.sheet)
-    return Boot(out, t0, t1, r.log)
+    return Boot(out, t0, t1, r.log, shots_dir)
 
 
 # ---------------------------------------------------------------- every player's scenarios
@@ -223,6 +234,68 @@ def udelay(step: StepContext) -> Outcome:
         if t < asked * 0.99 or t > asked + max(1, asked * 0.02):
             out.problems.append(f"udelay({asked}) at {mhz} MHz took {took} us")
     out.note = ", ".join(f"udelay(1) {t} us at {mhz} MHz" for us, mhz, t in got if us == "1")
+    return out
+
+
+def backlight_curve(frames: dict[int, np.ndarray], steps: list[tuple[int, float]],
+                    hold: float = BACKLIGHT_HOLD_S) -> tuple[list[tuple[int, float | None]], int]:
+    """Each backlight step's brightness on camera, from FRAMES (grey, by
+    their second in the run) and STEPS (level, its start in seconds): the
+    mean over the panel, the pixels lit by more than BACKLIGHT_LIT between
+    the first (off) step and the last, of the frames wholly inside the step
+    (a frame shows the panel up to 2 s before its second); None where no
+    frame is. Also the panel's pixel count."""
+    def inside(i: int) -> list[np.ndarray]:
+        a = steps[i][1]
+        b = steps[i + 1][1] if i + 1 < len(steps) else a + hold
+        return [frames[t] for t in sorted(frames) if a + 2.5 <= t <= b - 0.5]
+    picks = [inside(i) for i in range(len(steps))]
+    mask = np.zeros((1, 1), bool)
+    if picks[0] and picks[-1]:
+        mask = np.mean(picks[-1], axis=0) - np.mean(picks[0], axis=0) > BACKLIGHT_LIT
+    if not mask.any():
+        return [(level, None) for level, _ in steps], 0
+    return ([(level, float(np.mean([f[mask].mean() for f in p])) if p else None)
+             for (level, _), p in zip(steps, picks, strict=True)], int(mask.sum()))
+
+
+@scenario("backlight", suite="soak", area="lcd", weight=1)
+def backlight(step: StepContext) -> Outcome:
+    """The backlight from off to full on camera: the shell's backlight
+    shows a white screen with the backlight off, then at each brightness,
+    10 s a step; the panel gets no darker from one step to the next, the
+    lowest brightness is clearly lit and full is far from off"""
+    try:
+        camera.check_fresh(step.target.ws)
+    except camera.CameraError as e:
+        return Outcome(note=f"skipped: {e}", skipped=True)
+    b = boot(step, 150, "12000", settings={"then": "backlight"}, shots=True)
+    out = b.outcome
+    if out.lost or b.shots is None:
+        return out
+    if "sh: backlight: err" in out.output:
+        return Outcome(note="skipped: the build's shell has no backlight", skipped=True,
+                       output=out.output)
+    steps = [(int(level), int(tick) / HZ) for level, tick in BACKLIGHT.findall(out.output)]
+    if len(steps) < 3:
+        out.problems.append(f"{len(steps)} backlight steps logged")
+        return out
+    frames = {int(p.stem[1:]): np.asarray(Image.open(p).convert("L").reduce(4), np.float32)
+              for p in sorted(b.shots.glob("t[0-9]*.png"))}
+    curve, panel = backlight_curve(frames, steps)
+    if panel < BACKLIGHT_PANEL:
+        out.problems.append("the panel never lit on camera (no frame, or off and full alike)")
+        return out
+    out.note = ", ".join(f"{level}: {v:.0f}" if v is not None else f"{level}: -"
+                         for level, v in curve) + f" (panel {panel} px)"
+    out.problems += [f"no frame inside brightness {level}" for level, v in curve if v is None]
+    seen = [(level, v) for level, v in curve if v is not None]
+    for (l0, v0), (l1, v1) in itertools.pairwise(seen):
+        if v1 < v0 - 0.5:
+            out.problems.append(f"brightness {l1} darker on camera than {l0} ({v1:.1f} < {v0:.1f})")
+    if len(seen) > 1 and seen[1][1] - seen[0][1] < 10:
+        out.problems.append(f"brightness {seen[1][0]} hardly lit ({seen[1][1] - seen[0][1]:.1f} "
+                            "over off)")
     return out
 
 

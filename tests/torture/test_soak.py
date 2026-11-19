@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+
 from auto_rockbox import card, engine, keys, registry
 from auto_rockbox.engine import Outcome
 from auto_rockbox.lock import DeviceLock
@@ -24,7 +26,7 @@ from auto_rockbox.workspace import Workspace
 
 RETURN = "dev return: on time"
 GENERIC = {"boot", "crash", "poweroff", "sdtest", "fsck", "tone", "games", "usb-hash",
-           "udelay"}
+           "udelay", "backlight"}
 
 
 class LogPlayer(Target):
@@ -79,7 +81,7 @@ def test_registered() -> None:
                                     "flick": "needs touch", "fm-station": "needs fm"}
     ts17 = engine.scenarios_for(SoakSuite(Ts17(ws), Path("x.elf"), shots=False))
     assert ({n for n, s in ts17.items() if s.targets is None}
-            == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay"})
+            == {"crash", "sdtest", "fsck", "games", "usb-hash", "udelay", "backlight"})
     assert all(ts17[n].targets == {"ts17"} for n in ("boot", "tone", "poweroff"))
 
 
@@ -180,6 +182,49 @@ def test_udelay() -> None:
     assert run("udelay", lambda req: "udelay 1 us x 1000000 at 96 MHz: 150 ticks, 1.500 "
                "us a call\n" + RETURN)[0].problems == ["1 udelay lines of 14"]
     assert run("udelay", lambda req: "sh: udelay: err\n" + RETURN)[0].skipped
+
+
+def test_backlight_curve() -> None:
+    """Each step's panel brightness from the frames inside it; a step with
+    no frame is None; a panel that never lit gives nothing"""
+    steps = [(0, 15.0), (1, 25.0), (2, 35.0), (3, 45.0)]
+    frames = {}
+    for t in range(0, 60, 5):
+        f = np.full((40, 40), 3.0, np.float32)
+        level = max((lv for lv, at in steps if t - 2.5 >= at), default=None)
+        if level:
+            f[10:30, 10:30] = 60.0 * level      # the panel; the rest is the room
+        frames[t] = f
+    curve, panel = soak.backlight_curve(frames, steps)
+    assert panel == 400 and curve == [(0, 3.0), (1, 60.0), (2, 120.0), (3, 180.0)]
+    del frames[40]
+    assert soak.backlight_curve(frames, steps)[0][2] == (2, None)
+    dark = {t: np.zeros((40, 40), np.float32) for t in frames}
+    assert soak.backlight_curve(dark, steps) == ([(0, None), (1, None), (2, None), (3, None)], 0)
+
+
+def test_backlight_judging() -> None:
+    """Off, then every level no darker than the one before, the lowest
+    clearly lit; a camera that is not running skips"""
+    log = "".join(f"backlight {lv} at tick {1500 + 1000 * lv}\n" for lv in range(4))
+
+    def judge(curve: list[tuple[int, float | None]]) -> Outcome:
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(soak.camera, "check_fresh"), \
+                mock.patch.object(soak, "backlight_curve", return_value=(curve, 5000)):
+            p = LogPlayer(Workspace(Path(tmp)), lambda req: log + RETURN)
+            ctx = engine.StepContext(1, "backlight", p, SoakSuite(p, Path("x.elf"), shots=False),
+                                     random.Random(1), Path(tmp), datetime.now())
+            out = engine.scenarios_for(ctx.suite)["backlight"].fn(ctx)
+            assert p.requests[0].settings == {"then": "backlight"}
+            return out
+    assert judge([(0, 1.0), (1, 49.0), (2, 185.0), (3, 185.2)]).problems == []
+    assert judge([(0, 1.0), (1, 49.0), (2, 40.0), (3, 190.0)]).problems == [
+        "brightness 2 darker on camera than 1 (40.0 < 49.0)"]
+    assert judge([(0, 1.0), (1, 4.0), (2, 185.0), (3, None)]).problems == [
+        "no frame inside brightness 3", "brightness 1 hardly lit (3.0 over off)"]
+    with mock.patch.object(soak.camera, "check_fresh", side_effect=soak.camera.CameraError("x")):
+        assert run("backlight", str)[0].skipped
 
 
 def test_tone_needs_the_capture() -> None:

@@ -160,7 +160,7 @@ def sdtest(step: StepContext) -> Outcome:
   itself passed.
 
 Every player's soak scenarios (`suites/soak.py`: boot, crash, poweroff,
-sdtest, fsck, usb-hash, udelay, tone, flick, fm-station, games) use only the run settings every dev build takes
+sdtest, fsck, usb-hash, udelay, backlight, tone, flick, fm-station, games) use only the run settings every dev build takes
 (`dev_boot`: `sdtest=`, `crash=`, `poweroff=`, `play=`, `sh=`, ...) and the
 Target API, so they run on a player whose dev shell doesn't work yet. A
 player's own (`targets/NAME/soak.py`) follow its menus, and one of the same
