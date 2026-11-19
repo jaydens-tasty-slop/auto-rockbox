@@ -1,6 +1,6 @@
 """The dev block: run config and log ring in the last 4 KiB of the 16 KiB SRAM
 block at 0x01140000, which a reset into download mode leaves alone. The
-layout is shared with the dev build (firmware/target/arm/lark/ts17/dev-ts17.c).
+layout is shared with the dev build (firmware/target/arm/lark/dev-lark.c).
 
     +0x000  run config, written by the host before a run, consumed once:
             magic "TSDC", then "key=value" lines and a NUL (devlog.h,
@@ -29,14 +29,14 @@ LOG_MAGIC = 0x474C5354          # "TSLG"
 LOG_HEADER = 0x10               # the ring follows the header
 EMPTY_LOG_HEADER = bytes(12)    # written before a launch: the image starts a fresh log
 CRUMB_MAGIC = 0x43545354        # "TSTC"
-CRUMB_SIZE = 20                 # magic, tick, pc, lr, in_handler (dev-ts17.c struct dev_crumb)
+CRUMB_SIZE = 20                 # magic, tick, pc, lr, in_handler (dev-lark.c struct dev_crumb)
 CRUMB = DEV_BLOCK + DEV_BLOCK_SIZE - CRUMB_SIZE   # every tick rewrites it; cleared at launch
-RING_BYTES = CRUMB - LOG - LOG_HEADER   # dev-ts17.c RING_BYTES
+RING_BYTES = CRUMB - LOG - LOG_HEADER   # dev-lark.c RING_BYTES
 LAUNCH_TOKEN = 0x4E55524C       # "LRUN" in r0: started by the host, not the boot chain
 DEFAULT_RETURN_S = 90           # the image's return time when it finds no config
 RETURN_LINE = "returning to download mode at tick"
 
-# The run settings the image takes (apps/dev_shell.c, dev-ts17.c), as
+# The run settings the image takes (apps/dev_shell.c, dev-lark.c), as
 # accepted values; None takes any
 SETTINGS: Mapping[str, tuple[str, ...] | None] = {
     "trace": ("0", "1"),        # a thread dump before the return

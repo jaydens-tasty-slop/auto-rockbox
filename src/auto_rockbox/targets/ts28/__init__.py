@@ -1,5 +1,5 @@
-"""The TS28: an Actions "Lark" player like the TS17 (targets/ts17), with a
-240x320 touch panel, a speaker and six keys.
+"""The TS28: a Tengsen player on the Actions "Lark" SoC, like the TS17
+(targets/ts17), with a 240x320 touch panel, a speaker and six keys.
 
 The boot ROM, the boot chain (byte-identical to the TS17's), the flash layout
 (stock's application at NOR 0x14000, which our image replaces behind the
